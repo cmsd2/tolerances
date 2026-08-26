@@ -1,0 +1,376 @@
+# =============================================================================
+# parameters.example.yaml
+#
+# A complete worked example of the single-source-of-truth parameter file
+# described in docs/05-parameter-model.md.
+#
+# The example assembly: a printed two-part enclosure holding a PCB on printed
+# bosses, with a USB-C aperture in one wall. It is the same assembly used for
+# the worked stack-ups in docs/02-methods.md §10 and docs/08-kicad-pcb.md §5.
+#
+# Copy to params/parameters.yaml and edit.
+# =============================================================================
+
+schema_version: 1
+project: example-enclosure
+units: mm                       # all lengths mm, all angles degrees
+
+
+# =============================================================================
+# PROCESSES — the capability library.
+#
+# Described once, referenced by many parameters. Re-characterising the printer
+# means editing one block here, not twenty parameters below.
+#
+# offset / scale / sigma come from the regression in docs/04 §7:
+#     error = offset + scale x nominal + eps,   eps ~ (0, sigma)
+# =============================================================================
+
+processes:
+
+  mk4_pla_04_02:
+    kind: fdm
+    printer: prusa_mk4
+    material: pla
+    brand_colour: prusament_galaxy_black    # colour matters - see docs/04 §2
+    nozzle: 0.4
+    layer_height: 0.2
+    profile: profiles/mk4_pla_04_02.ini
+    profile_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    characterised: 2026-08-20
+    campaign: params/capability/campaigns/2026-08-20-mk4-pla/
+
+    # WHERE BIAS IS CORRECTED. Exactly one location. See docs/04 §9.
+    compensation:
+      location: slicer
+      xy_size_compensation: -0.06     # external features were running +0.06
+      hole_expansion: 0.08            # holes were running -0.08
+      shrinkage_percent: 0.3
+      note: >
+        Compensation lives ENTIRELY in the slicer profile above.
+        Do NOT also offset dimensions in the CAD model.
+        The figures below are POST-compensation residuals.
+
+    classes:
+      external_xy:
+        offset: 0.005                 # residual constant bias, mm
+        scale: 0.0000                 # residual proportional bias
+        sigma: 0.031
+        sigma_upper95: 0.041          # <-- this is what stacks should use
+        n: 30
+        dist: normal
+      internal_xy:
+        offset: -0.012
+        scale: 0.0000
+        sigma: 0.028
+        sigma_upper95: 0.037
+        n: 30
+        dist: normal
+      external_z:
+        offset: 0.018                 # first-layer datum offset
+        scale: 0.0000
+        sigma: 0.022
+        sigma_upper95: 0.029
+        n: 30
+        dist: normal
+        note: >
+          Z spread is small because heights are layer-quantised. The real Z
+          risk is quantisation error, not random spread - keep critical Z
+          dimensions at integer multiples of 0.2 mm. See docs/04 §2.
+
+  jlcpcb_2layer_1p6:
+    kind: pcb_fab
+    supplier: JLCPCB
+    stackup: "2 layer, 1.6mm, HASL"
+    source_url: "https://jlcpcb.com/capabilities/pcb-capabilities"
+    read_on: 2026-08-20
+    note: >
+      Supplier figures are SPEC LIMITS, not 3-sigma. Model as uniform.
+      See docs/02 §8 and docs/08 §4.
+
+  hand_solder:
+    kind: pcb_assembly
+    method: hand
+    characterised: null
+    note: >
+      NOT characterised. Placement accuracy is a guess and is currently the
+      largest assumed input in the connector chain. Measure this on a scrap
+      board - docs/08 §8. TODO.
+
+
+# =============================================================================
+# CORRELATION GROUPS — shared causes of variation.
+#
+# Members share a latent factor sampled once per virtual assembly:
+#     L_i = nominal_i + offset_i + s_i * z_group + eps_i
+#
+# 'share' is the fraction of member variance that is common-mode.
+# 0 = independent (what RSS assumes), 1 = members move rigidly together.
+#
+# This is the single most important modelling feature for printed assemblies,
+# and it can move the answer in EITHER direction depending on the signs in
+# the chain. See docs/02 §6.
+# =============================================================================
+
+correlations:
+
+  printer_z_session:
+    description: >
+      Shared first-layer height and Z-datum bias across all parts printed in
+      one session on one machine. Affects every external_z dimension.
+    process: mk4_pla_04_02
+    share: 0.6
+
+  printer_xy_flow:
+    description: >
+      Shared flow/extrusion-width bias across features printed together.
+      Affects external_xy and internal_xy in the same direction.
+    process: mk4_pla_04_02
+    share: 0.5
+
+  pcb_routing:
+    description: >
+      Board outline routed in one operation - all outline dimensions share
+      the same tool-path offset.
+    process: jlcpcb_2layer_1p6
+    share: 0.8
+
+
+# =============================================================================
+# PARAMETERS
+#
+# 'source' is the most important field in this file. When a stack comes out
+# marginal, the first question is which inputs are real.
+#     measured      - from a characterisation campaign, with n and a date
+#     supplier_spec - from a datasheet or capability page, with URL + date
+#     standard      - from ISO 2768, ISO 286, an IPC table
+#     assumed       - you made it up.  Legitimate, but must be visible.
+# =============================================================================
+
+parameters:
+
+  # --- Enclosure body (printed) ------------------------------------------
+
+  encl_cavity_height:
+    nominal: 10.0
+    description: Internal floor to lid seating face
+    process: mk4_pla_04_02
+    feature_class: external_z
+    correlation_group: printer_z_session
+    source: design
+    consumers:
+      freecad: {document: enclosure, spreadsheet: Params, alias: encl_cavity_height}
+    notes: 50 layers at 0.2 mm - deliberately an integer multiple. See docs/04 §2.
+
+  encl_boss_height:
+    nominal: 5.0
+    description: PCB support boss, above cavity floor
+    process: mk4_pla_04_02
+    feature_class: external_z
+    correlation_group: printer_z_session
+    source: design
+    consumers:
+      freecad: {document: enclosure, spreadsheet: Params, alias: encl_boss_height}
+
+  encl_wall_position_x:
+    nominal: 30.0
+    description: Cavity datum to inner face of the connector wall
+    process: mk4_pla_04_02
+    feature_class: external_xy
+    correlation_group: printer_xy_flow
+    source: design
+    consumers:
+      freecad: {document: enclosure, spreadsheet: Params, alias: encl_wall_position_x}
+
+  encl_aperture_centre_z:
+    nominal: 8.2
+    description: Cavity floor to USB-C aperture centreline
+    process: mk4_pla_04_02
+    feature_class: external_xy      # aperture is cut in a vertical wall
+    correlation_group: printer_xy_flow
+    source: design
+    consumers:
+      freecad: {document: enclosure, spreadsheet: Params, alias: encl_aperture_centre_z}
+
+  encl_board_seat_clearance:
+    nominal: 0.25
+    description: Designed clearance between board edge and cavity wall
+    tolerance:
+      type: symmetric
+      value: 0.25
+      dist: uniform
+      source_note: "Board floats within this clearance; position is uniform across it"
+    source: design
+    notes: >
+      This is a DESIGN clearance, not a process tolerance - the board really
+      can sit anywhere in it. Modelled uniform for exactly that reason.
+      Top contributor in the connector chain (docs/08 §5).
+
+  # --- Lid (printed) ------------------------------------------------------
+
+  lid_rib_height:
+    nominal: 3.0
+    description: Lid retention rib, bearing on top of PCB
+    process: mk4_pla_04_02
+    feature_class: external_z
+    correlation_group: printer_z_session
+    source: design
+    consumers:
+      freecad: {document: lid, spreadsheet: Params, alias: lid_rib_height}
+
+  # --- PCB (purchased) ----------------------------------------------------
+
+  pcb_thickness:
+    nominal: 1.6
+    description: Finished board thickness
+    tolerance:
+      type: symmetric
+      value: 0.16                   # +/-10%
+      dist: normal                  # fabs genuinely control this well
+    source: supplier_spec
+    reference: "JLCPCB capabilities page, read 2026-08-20"
+    consumers:
+      kicad: {board: controller, item: stackup_thickness}
+      freecad: {document: enclosure, spreadsheet: Params, alias: pcb_thickness}
+
+  pcb_outline_x:
+    nominal: 60.0
+    description: Board outline, X
+    tolerance:
+      type: symmetric
+      value: 0.20
+      dist: uniform                 # spec limit, not 3-sigma
+    source: supplier_spec
+    reference: "JLCPCB routed outline tolerance, read 2026-08-20"
+    correlation_group: pcb_routing
+    consumers:
+      kicad: {board: controller, item: edge_cuts_bbox_x}
+      freecad: {document: enclosure, spreadsheet: Params, alias: pcb_outline_x}
+    notes: EXTRACTED FROM KICAD - board-led. See docs/08 §3.
+
+  pcb_hole_to_edge:
+    nominal: 3.5
+    description: Mounting hole centre to nearest board edge
+    tolerance:
+      type: symmetric
+      value: 0.15
+      dist: uniform
+    source: supplier_spec
+    reference: "Hole-to-outline registration, JLCPCB, read 2026-08-20"
+    notes: >
+      NOT the hole diameter tolerance. Drill and rout may use different
+      datums, so registration is the governing figure and is usually worse
+      than either individual tolerance. See docs/08 §4.
+
+  # --- Connector (purchased + assembly) -----------------------------------
+
+  usbc_centre_from_edge:
+    nominal: 12.0
+    description: Board edge to USB-C receptacle centreline, as designed
+    fixed: true                     # exact by construction in KiCad
+    source: design
+    consumers:
+      kicad: {board: controller, item: "J1.position.x"}
+
+  usbc_placement_error:
+    nominal: 0.0
+    description: Placement error of J1 relative to its footprint
+    tolerance:
+      type: symmetric
+      value: 0.30
+      dist: uniform
+    process: hand_solder
+    source: assumed                 # <-- LARGEST ASSUMED INPUT. Measure it.
+    notes: >
+      Hand-soldered. Guess. docs/08 §8 - measure on a scrap board; this is
+      probably the cheapest uncertainty reduction available in this project.
+
+  usbc_body_to_centre:
+    nominal: 0.0
+    description: Receptacle opening centre vs. its own lead centreline
+    tolerance:
+      type: symmetric
+      value: 0.15
+      dist: uniform
+    source: supplier_spec
+    reference: "GCT USB4085 datasheet rev C, table 2"
+
+
+# =============================================================================
+# STACKS
+#
+# 'expression' is authoritative - signs come from the arithmetic.
+# 'path' documents the physical route so a human can check the loop closes,
+# which is the error that formulas hide. A validator should check the two
+# agree.
+# =============================================================================
+
+stacks:
+
+  lid_board_clearance:
+    description: >
+      Residual clearance between the lid rib and the top of the PCB.
+      G < 0 means the lid will not close without bowing the board.
+      G > 1.0 means the board rattles.
+    criticality: key
+    expression: "encl_cavity_height - encl_boss_height - pcb_thickness - lid_rib_height"
+    requirement:
+      min: 0.0
+      max: 1.0
+      target: 0.4
+    acceptance:
+      method: monte_carlo
+      max_failure_rate: 0.01        # 1 in 100 acceptable for a one-off
+      samples: 200000
+    path:
+      - {param: encl_cavity_height, sign: +1, note: "floor -> lid seat"}
+      - {param: encl_boss_height,   sign: -1, note: "floor -> boss top"}
+      - {param: pcb_thickness,      sign: -1, note: "boss top -> board top"}
+      - {param: lid_rib_height,     sign: -1, note: "lid seat -> rib face"}
+    notes: >
+      Worked through analytically in docs/02 §10. Note the correlation group
+      HELPS here: cavity height enters with +1 while boss and rib enter with
+      -1, so a common Z bias partially cancels. RSS misses this entirely.
+
+  usbc_aperture_alignment:
+    description: >
+      Lateral misalignment between the printed aperture and the USB-C
+      receptacle opening. Budget is +/-0.35 mm before the plug fouls.
+    criticality: key
+    expression: >
+      encl_wall_position_x - pcb_outline_x + usbc_centre_from_edge
+      + usbc_placement_error + usbc_body_to_centre + encl_board_seat_clearance
+    requirement:
+      min: -0.35
+      max: 0.35
+      target: 0.0
+    acceptance:
+      method: monte_carlo
+      max_failure_rate: 0.05
+      samples: 200000
+    notes: >
+      Worked through in docs/08 §5. FAILS worst-case AND is marginal on RSS.
+      Contrast with the stack above: here every printed term enters with the
+      same sign, so correlation HURTS.
+
+      The fix is a design change, not tighter tolerances - even eliminating
+      the top contributor entirely leaves RSS at 0.37 against a 0.40 budget.
+      Preferred: locate the board off the connector aperture rather than the
+      board edge, and slot the mounting holes. That removes the two largest
+      contributors from the chain.
+
+  mounting_hole_alignment:
+    description: Board mounting hole vs. printed boss centre
+    criticality: key
+    expression: "pcb_hole_to_edge + encl_board_seat_clearance"
+    requirement:
+      min: -0.6                     # M3 clearance hole 3.2 on a 3.0 screw
+      max: 0.6
+      target: 0.0
+    acceptance:
+      method: worst_case            # four holes must ALL line up - be strict
+    notes: >
+      Worst case chosen deliberately: this is an all-of-four condition, and
+      the four holes are strongly correlated through the same routing and
+      the same printed cavity. Statistical methods are inappropriate when
+      the events are neither independent nor individually decisive.

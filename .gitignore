@@ -1,0 +1,36 @@
+# --- FreeCAD ---
+*.FCStd1
+*.FCBak
+*.FCStd.lock
+
+# --- KiCad ---
+*-backups/
+*.kicad_pcb-bak
+*.kicad_sch-bak
+*.kicad_prl
+fp-info-cache
+*.net
+*.bak
+_autosave-*
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+*.egg-info/
+
+# --- Generated outputs ---
+# Reports are deliberately COMMITTED - see docs/05 §5.
+# Gerbers and STLs are not: they are regenerable from the model.
+gerbers/
+*.stl
+*.3mf
+*.gcode
+*.step
+!pcb/*.step
+
+# --- OS ---
+.DS_Store
+Thumbs.db

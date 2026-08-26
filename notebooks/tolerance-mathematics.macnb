@@ -1,0 +1,391 @@
+{
+  "nbformat": 4,
+  "nbformat_minor": 5,
+  "metadata": {
+    "kernelspec": {
+      "name": "maxima",
+      "display_name": "Maxima",
+      "language": "maxima"
+    },
+    "aximar": {}
+  },
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "source": "# Tolerance Stack Mathematics\n\nSymbolic derivations for the formulas used in `docs/02-methods.md`.\n\nThe point of this notebook is that the numbers in a tolerance analysis should not be\nmagic. In particular, Scholz's table of *distribution inflation factors* (ISSTECH-95-030,\nFigure 6) is normally copied around as a list of decimals with no visible origin. It is\nderived here from first principles in §3, and every value is reproduced exactly.\n\n**Contents**\n\n1. Variance propagation through a linear tolerance chain\n2. Worst case versus RSS\n3. Distribution inflation factors — deriving Scholz Figure 6\n4. The trapezoidal family, and why uniform and triangular are its endpoints\n5. Greenwood–Chase: mean shifts interpolate between worst case and RSS\n6. The worked example from `docs/02` §10\n7. When correlation helps and when it hurts\n\nReference: Scholz, F. (1995), *Tolerance Stack Analysis Methods*, Boeing ISSTECH-95-030.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 0. Primer — everything you need before starting\n\nYou do not need to have read Scholz to follow this notebook. Here is the whole setup.\n\n### The situation\n\nYou have an assembly. Some clearance in it matters — a lid must close, a plug must fit an\naperture, a board must not rattle. Call that clearance $G$, the **assembly criterion**. It is\nnot a dimension you can control directly; it is whatever is left over after several part\ndimensions have added and subtracted.\n\nWrite the part dimensions $L_1, \\dots, L_n$. Each has a **nominal** value $\\lambda_i$ (what\nyou drew in CAD) and an **actual** value that differs from it, because nothing is made\nperfectly. Then\n\n$$G = L_1 - L_2 - L_3 - \\cdots$$\n\nwith a $+$ for each dimension that opens the gap and a $-$ for each that closes it. That\nsigned list is the **tolerance chain**. Getting it right — a path that closes, with correct\nsigns — is the part that needs engineering judgement; everything after it is arithmetic.\n\n### What $T$ means, and the one convention that causes all the trouble\n\n$T_i$ is the **tolerance** of dimension $i$: the half-width of the permitted band, so the\ndimension is allowed to be anywhere in $\\lambda_i \\pm T_i$.\n\nBut a tolerance is a *permission*, not a *description*. To do statistics you need to know how\nthe dimension is actually distributed inside that band. The universal convention is:\n\n$$T_i = 3\\sigma_i$$\n\nthat is, the tolerance band is assumed to be the $\\pm 3\\sigma$ range of a normal distribution\ncentred on nominal. About 99.73% of parts fall inside it.\n\n**Almost every complication in this notebook comes from that convention being wrong in some\nspecific way**, and each section is a repair for one of the ways:\n\n| The assumption | How it fails | Repaired in |\n|---|---|---|\n| Dimensions vary independently | Same machine, same batch ⇒ they move together | §1, §7 |\n| $T = 3\\sigma$ | People often quote $T$ meaning $2\\sigma$ | §6 (Bender) |\n| The distribution is normal | Tool wear ⇒ uniform; pooled batches ⇒ bimodal | §3, §4 |\n| The process is centred on nominal | Centring is hard, and FDM is badly off-centre | §5 |\n\n### The two classical answers\n\n**Worst case.** Assume every dimension sits at its least favourable limit simultaneously. Add\nthe tolerances. This *guarantees* the parts fit — no distributional assumption at all — but\nit is very pessimistic, because all $n$ dimensions being extreme in the same unhelpful\ndirection at once is wildly unlikely.\n\n**RSS (root sum square).** Treat the dimensions as independent random variables and add their\n*variances* rather than their tolerances, which means the tolerances combine in quadrature.\nMuch tighter, but it buys that tightness with four assumptions, and in practice real\nassemblies vary more than RSS predicts.\n\nScholz's summary is the one to keep: these two *\"provide conservative and optimistic\nbenchmarks, respectively\"*. Neither is the truth. The truth is somewhere between, and the\njob of the rest of this notebook is to work out where.\n\n### Notation\n\n| Symbol | Meaning |\n|---|---|\n| $L_i$ | actual value of dimension $i$ (a random variable) |\n| $\\lambda_i$ | nominal value of dimension $i$ |\n| $\\sigma_i$ | standard deviation of dimension $i$ |\n| $T_i$ | tolerance half-width of dimension $i$; conventionally $3\\sigma_i$ |\n| $G, \\gamma$ | assembly gap, and its nominal value |\n| $a_i$ | sensitivity: how much $G$ changes per unit change in $L_i$. Here $\\pm 1$ |\n| $\\rho_{ij}$ | correlation between dimensions $i$ and $j$ |\n| $c_i$ | inflation factor correcting for a non-normal distribution (§3) |\n| $\\eta_i$ | mean shift as a fraction of tolerance (§5) |\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 1. Variance propagation through a linear tolerance chain\n\nAn assembly criterion $G$ is a function of part dimensions $L_1, \\dots, L_n$. Linearised\nabout nominal,\n\n$$G \\approx a_0 + \\sum_{i=1}^{n} a_i L_i$$\n\nwhere $a_i$ is the partial derivative of $G$ with respect to $L_i$, evaluated at nominal.\n\nFor a pure length stack every $a_i = \\pm 1$: $+1$ if the dimension adds to the gap, $-1$\nif it subtracts.\n\nWriting $a$ for the sensitivity vector and $\\Sigma$ for the covariance matrix of the\ndimensions, the exact variance of $G$ is\n\n$$Var(G) = a^{T} \\, \\Sigma \\, a$$\n\nEverything else in tolerance analysis is a special case of this one expression. Let us\nexpand it and see what falls out.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": "/* The covariance matrix of the part dimensions, shown for n = 3.\n   Σ[i,j] = ρ[i,j] σ[i] σ[j],  with ρ[i,i] = 1.                       */\n\nload(linearalgebra)$\nn : 3$\n\nΣ : genmatrix(\n      lambda([i,j], if i = j then σ[i]^2 else ρ[i,j]*σ[i]*σ[j]),\n      n, n);\n",
+      "metadata": {},
+      "execution_count": 6,
+      "outputs": [
+        {
+          "data": {
+            "text/latex": [
+              "\\ifx\\endpmatrix\\undefined\\pmatrix{\\else\\begin{pmatrix}\\fi \\sigma_{1}^2&\\sigma_{1}\\,\\rho_{1,2}\\,\\sigma_{2}&\\sigma_{1}\\,\\rho_{1,3}\\,\\sigma_{3}\\cr\\sigma_{1}\\,\\sigma_{2}\\,\\rho_{2,1}&\\sigma_{2}^2&\\sigma_{2}\\,\\rho_{2,3}\\,\\sigma_{3}\\cr \\sigma_{1}\\,\\sigma_{3}\\,\\rho_{3,1}&\\sigma_{2}\\,\\sigma_{3}\\,\\rho_{3,2}&\\sigma_{3}^2\\cr \\ifx\\endpmatrix\\undefined}\\else\\end{pmatrix}\\fi "
+            ]
+          },
+          "execution_count": 6,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": "/* `a` was bound to a matrix above, so a[i] would return a row.\n   Clear it and use plain indexed symbols.                              */\nkill(a)$\n\n/* Expand aᵀ Σ a as a double sum, imposing ρ[j,i] = ρ[i,j]. */\nρsym(i,j) := if i = j then 1 elseif i < j then ρ[i,j] else ρ[j,i]$\n\nVarG : expand( sum( sum( a[i]*a[j]*ρsym(i,j)*σ[i]*σ[j], j, 1, n), i, 1, n) );\n",
+      "metadata": {},
+      "execution_count": 5,
+      "outputs": [
+        {
+          "data": {
+            "text/latex": [
+              "a_{3}^2\\,\\sigma_{3}^2+2\\,a_{2}\\,\\sigma_{2}\\,\\rho_{2,3}\\,a_{3}\\,\\sigma_{3}+2\\,a_{1}\\,\\sigma_{1}\\,\\rho_{1,3}\\,a_{3}\\,\\sigma_{3}+a_{2}^2\\,\\sigma_{2}^2+2\\,a_{1}\\,\\sigma_{1}\\,\\rho_{1,2}\\,a_{2}\\,\\sigma_{2}+a_{1}^2\\,\\sigma_{1}^2"
+            ]
+          },
+          "execution_count": 5,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": "/* Setting every ρ = 0 recovers the classical RSS variance.\n   This is the ONLY thing that separates RSS from the truth.            */\n\nindep : makelist(makelist(ρ[i,j] = 0, j, i+1, n), i, 1, n-1)$\nindep : flatten(indep)$\n\nVarG_indep : expand( subst(indep, VarG) );\n",
+      "metadata": {},
+      "execution_count": 7,
+      "outputs": [
+        {
+          "data": {
+            "text/latex": [
+              "a_{3}^2\\,\\sigma_{3}^2+a_{2}^2\\,\\sigma_{2}^2+a_{1}^2\\,\\sigma_{1}^2"
+            ]
+          },
+          "execution_count": 7,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 2. Worst case versus RSS\n\nWith $T_i = 3\\sigma_i$ the two classical formulas are\n\n$$T_{arith} = \\sum_i \\lvert a_i \\rvert \\, T_i$$\n\n$$T_{stat} = \\sqrt{\\sum_i a_i^2 T_i^2}$$\n\nScholz's \"Pythagorean shortcut\": worst case walks the three edges of a box, RSS takes the\ndiagonal. The diagonal is always shorter, and the gap widens as terms are added — which is\nthe whole economic argument for statistical tolerancing.\n\nThe ratio for $n$ equal tolerances is worth having explicitly, because it tells you exactly\nhow much you are claiming.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": "/* n identical terms, each with tolerance T and |a| = 1. */\nassume(T > 0, m > 0)$\n\nwc(m)  := m*T$\nrss(m) := sqrt(m*T^2)$\n\n/* The ratio is simply √n : RSS claims a factor-√n reduction over worst case. */\nratio : radcan( wc(m)/rss(m) );\n",
+      "metadata": {},
+      "execution_count": 9,
+      "outputs": [
+        {
+          "data": {
+            "text/latex": [
+              "\\sqrt{m}"
+            ]
+          },
+          "execution_count": 9,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 3. Distribution inflation factors — deriving Scholz Figure 6\n\nRSS assumes each dimension is normal with $T = 3\\sigma$. When it is not, the contribution\nis corrected by an **inflation factor** $c$:\n\n$$T_{stat}(c) = \\sqrt{\\sum_i (c_i \\, a_i \\, T_i)^2}$$\n\nThe definition of $c$ is the key, and it is disarmingly simple. The normal convention\nidentifies the tolerance half-width with three standard deviations. So for any distribution\nsupported on $[-T, T]$ with standard deviation $\\sigma$, the equivalent \"three sigma\"\nhalf-width is $3\\sigma$, and\n\n$$c = \\frac{3\\sigma}{T}$$\n\nFor the normal case $\\sigma = T/3$ and $c = 1$, as it must be.\n\nSo every entry in Scholz's Figure 6 is just $3\\sigma/T$ for the density in question. Let us\ncompute them all. Each density below is symmetric about zero, so the mean vanishes and\n\n$$\\sigma^2 = \\int_{-T}^{T} x^2 f(x) \\, dx = 2 \\int_{0}^{T} x^2 f(x) \\, dx$$\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": "/* Helper. Every density here is symmetric about 0 on [-T,T], so we supply\n   the density on the half-interval [0,T] and double the integrals.\n\n   Returns [total area (must be 1), σ², c = 3σ/T].                       */\n\nassume(T > 0)$\n\ninfl(fhalf) := block([area, σ2],\n    area : ratsimp( 2*integrate(fhalf, x, 0, T) ),\n    σ2   : ratsimp( 2*integrate(x^2*fhalf, x, 0, T) ),\n    [area, σ2, radcan(3*sqrt(σ2)/T)] )$\n\n/* --- Uniform:  f = 1/(2T) --------------------------------------------- */\nuni : infl( 1/(2*T) );\n",
+      "metadata": {},
+      "execution_count": 10,
+      "outputs": [
+        {
+          "data": {
+            "text/latex": [
+              "\\left[ 1 , {{T^2}\\over{3}} , \\sqrt{3} \\right] "
+            ]
+          },
+          "execution_count": 10,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": "/* --- Triangular:  f = (T - |x|)/T²  ------------------------------------ */\ntri : infl( (T - x)/T^2 );\n\n/* --- Elliptical / semicircular:  f = 2√(T²-x²)/(πT²) ------------------- */\nell : infl( 2*sqrt(T^2 - x^2)/(%pi*T^2) );\n\n/* --- Half cosine wave:  f = (π/4T)·cos(πx/2T) -------------------------- */\ncos_ : infl( (%pi/(4*T))*cos(%pi*x/(2*T)) );\n\n[tri, ell, cos_];\n",
+      "metadata": {},
+      "execution_count": 11,
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "[1,T^2/6,sqrt(3)/sqrt(2)]\n[1,T^2/4,3/2]\n[1,((%pi^2-8)*T^2)/%pi^2,(3*sqrt(%pi^2-8))/%pi]"
+          ]
+        },
+        {
+          "data": {
+            "text/latex": [
+              "\\left[ \\left[ 1 , {{T^2}\\over{6}} , {{\\sqrt{3}}\\over{\\sqrt{2}}} \\right]  ,\\left[ 1 , {{T^2}\\over{4}} , {{3}\\over{2}} \\right]  , \\left[ 1 , {{\\left(\\pi^2-8\\right)\\,T^2}\\over{\\pi^2}} , {{3\\,\\sqrt{\\pi^2-8}}\\over{\\pi}} \\right]\\right] "
+            ]
+          },
+          "execution_count": 11,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": "/* --- Symmetric beta family:  f ∝ (1 - (x/T)²)^(α-1)  on [-T,T] ---------\n   Substituting t = (x/T)² turns both integrals into beta functions, so the\n   whole family comes out in one closed form rather than case by case.   */\n\nassume(α > 0)$\n\nnum : (T^3/2) * beta(3/2, α)$      /* ∫ x² f  (unnormalised)  */\nden : (T/2)   * beta(1/2, α)$      /* ∫ f     (unnormalised)  */\n\n/* Γ(α+3/2) = (α+1/2)·Γ(α+1/2), so the ratio collapses.\n   minfactorial() applies exactly that recurrence.                       */\nσ2_beta : ratsimp( minfactorial( makefact( makegamma(num/den) ) ) );\nc_beta  : radcan( 3*sqrt(σ2_beta)/T );\n",
+      "metadata": {},
+      "execution_count": 14,
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "T^2/(2*alpha+1)"
+          ]
+        },
+        {
+          "data": {
+            "text/latex": [
+              "{{3}\\over{\\sqrt{2\\,\\alpha+1}}}"
+            ]
+          },
+          "execution_count": 14,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": "/* Assemble the table and check every entry against Scholz Figure 6.\n   Columns: name | c (exact) | c (numeric) | Scholz | match?              */\n\ncb(A) := subst(α = A, c_beta)$\n\nrows : [\n  [\"normal (T = 3σ)\",        1,              1.000 ],\n  [\"beta  α=β=3\",            cb(3),          1.134 ],\n  [\"triangular\",             tri[3],         1.225 ],\n  [\"half cosine wave\",       cos_[3],        1.306 ],\n  [\"beta  α=β=2 (parabolic)\",cb(2),          1.342 ],\n  [\"elliptical\",             ell[3],         1.500 ],\n  [\"uniform\",                uni[3],         1.732 ],\n  [\"beta  α=β=0.6 (bimodal)\",cb(0.6),        2.023 ]\n]$\n\ncheck(r) := block([exact : r[2], num : float(r[2]), ref : r[3]],\n    [ r[1], exact, num, ref,\n      if abs(num - ref) < 0.001 then \"OK\" else \"MISMATCH\" ])$\n\ntable : map(check, rows)$\nfor row in table do print(row)$\n",
+      "metadata": {},
+      "execution_count": 15,
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "[\"normal (T = 3σ)\",1,1.0,1.0,\"OK\"]\n[\"beta  α=β=3\",3/sqrt(7),1.1338934190276815,1.134,\"OK\"]\n[\"triangular\",sqrt(3)/sqrt(2),1.224744871391589,1.225,\"OK\"]\n[\"half cosine wave\",(3*sqrt(%pi^2-8))/%pi,1.3057085347625175,1.306,\"OK\"]\n[\"beta  α=β=2 (parabolic)\",3/sqrt(5),1.3416407864998738,1.342,\"OK\"]\n[\"elliptical\",3/2,1.5,1.5,\"OK\"]\n[\"uniform\",sqrt(3),1.7320508075688772,1.732,\"OK\"]\n[\"beta  α=β=0.6 (bimodal)\",2.0225995873897262,2.0225995873897262,2.023,\"OK\"]"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": "Every entry reproduces Scholz's Figure 6 exactly. The table is not a set of empirical\nconstants — it is $3\\sigma/T$ evaluated for eight densities.\n\nTwo things worth extracting from the derivation:\n\n- The **uniform** value $\\sqrt{3} \\approx 1.732$ is the practical worst case among symmetric\n  unimodal densities on a fixed interval: uniform has the largest possible $\\sigma$ of that\n  class. A process drifting monotonically across a build — tool wear, a warming enclosure,\n  a spool running down — produces something close to it.\n- The **bimodal** beta ($\\alpha = \\beta = 0.6$) exceeds 2. Bimodality is what you get from\n  two cavities of a mould, two print sessions pooled, or two suppliers, and it inflates the\n  contribution by more than the whole worst-case-versus-RSS saving for a short chain. If you\n  pool two characterisation campaigns without checking, this is what you are silently doing.\n\n## 4. The trapezoidal family\n\nThe trapezoidal density is uniform on $[-kT, kT]$ and falls linearly to zero at $\\pm T$.\nIt has $k$ as a shape parameter interpolating between the two most important cases, so it\nis the one to reach for when you want a single tunable model rather than a menu.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": "/* Trapezoidal on [-T,T]: flat at height h on [-kT, kT], linear to 0 at ±T.\n   Integrate the half-interval in two pieces and double.                 */\n\nassume(k > 0, k < 1)$\n\nh : 1/(T*(1+k))$                         /* normalising height */\n\nflat : integrate(h, x, 0, k*T)$\nramp : integrate(h*(T-x)/(T-k*T), x, k*T, T)$\narea_trap : ratsimp( 2*(flat + ramp) );   /* must be 1 */\n\nσ2_flat : integrate(x^2*h, x, 0, k*T)$\nσ2_ramp : integrate(x^2*h*(T-x)/(T-k*T), x, k*T, T)$\nσ2_trap : ratsimp( 2*(σ2_flat + σ2_ramp) );\n\nc_trap  : radcan( 3*sqrt(σ2_trap)/T );\n",
+      "metadata": {},
+      "execution_count": 16,
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "1\n(T^2*k^2+T^2)/6"
+          ]
+        },
+        {
+          "data": {
+            "text/latex": [
+              "{{\\sqrt{3}\\,\\sqrt{k^2+1}}\\over{\\sqrt{2}}}"
+            ]
+          },
+          "execution_count": 16,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": "/* Endpoints and the Scholz Figure 6 entry (k = 0.5). */\n\nendpoints : [\n  [\"k → 0  (triangular)\", radcan(limit(c_trap, k, 0, plus)), float(sqrt(3/2))],\n  [\"k = 0.5 (Scholz)\",    subst(k = 1/2, c_trap),            1.369          ],\n  [\"k → 1  (uniform)\",    radcan(limit(c_trap, k, 1, minus)), float(sqrt(3))]\n]$\n\nfor r in endpoints do\n    print(r[1], \" : exact = \", r[2], \" numeric = \", float(r[2]), \" expected = \", r[3])$\n",
+      "metadata": {},
+      "execution_count": 17,
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "k → 0  (triangular)  : exact =  sqrt(3)/sqrt(2)  numeric =  1.224744871391589\n                    expected =  1.224744871391589\nk = 0.5 (Scholz)  : exact =  (sqrt(3)*sqrt(5))/2^(3/2)  numeric =\n                1.369306393762915  expected =  1.369\nk → 1  (uniform)  : exact =  sqrt(3)  numeric =  1.7320508075688772\n                 expected =  1.7320508075688772"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": "plot2d(c_trap, [k, 0, 1],\n       [xlabel, \"k  (plateau half-width as a fraction of T)\"],\n       [ylabel, \"inflation factor c\"],\n       [legend, false],\n       [title, \"Trapezoidal family: triangular (k=0) to uniform (k=1)\"])$\n",
+      "metadata": {},
+      "execution_count": 18,
+      "outputs": [
+        {
+          "data": {
+            "image/svg+xml": [
+              "<?xml version=\"1.0\" encoding=\"utf-8\"  standalone=\"no\"?>\n<svg \n width=\"600\" height=\"480\"\n viewBox=\"0 0 600 480\"\n xmlns=\"http://www.w3.org/2000/svg\"\n xmlns:xlink=\"http://www.w3.org/1999/xlink\"\n>\n\n<title>Gnuplot</title>\n<desc>Produced by GNUPLOT 6.0 patchlevel 4 </desc>\n\n<g id=\"gnuplot_canvas\">\n\n<rect x=\"0\" y=\"0\" width=\"600\" height=\"480\" fill=\"none\"/>\n<defs>\n\n\t<circle id='gpDot' r='0.5' stroke-width='0.5' stroke='currentColor'/>\n\t<path id='gpPt0' stroke-width='0.222' stroke='currentColor' d='M-1,0 h2 M0,-1 v2'/>\n\t<path id='gpPt1' stroke-width='0.222' stroke='currentColor' d='M-1,-1 L1,1 M1,-1 L-1,1'/>\n\t<path id='gpPt2' stroke-width='0.222' stroke='currentColor' d='M-1,0 L1,0 M0,-1 L0,1 M-1,-1 L1,1 M-1,1 L1,-1'/>\n\t<rect id='gpPt3' stroke-width='0.222' stroke='currentColor' x='-1' y='-1' width='2' height='2'/>\n\t<rect id='gpPt4' stroke-width='0.222' stroke='currentColor' fill='currentColor' x='-1' y='-1' width='2' height='2'/>\n\t<circle id='gpPt5' stroke-width='0.222' stroke='currentColor' cx='0' cy='0' r='1'/>\n\t<use xlink:href='#gpPt5' id='gpPt6' fill='currentColor' stroke='none'/>\n\t<path id='gpPt7' stroke-width='0.222' stroke='currentColor' d='M0,-1.33 L-1.33,0.67 L1.33,0.67 z'/>\n\t<use xlink:href='#gpPt7' id='gpPt8' fill='currentColor' stroke='none'/>\n\t<use xlink:href='#gpPt7' id='gpPt9' stroke='currentColor' transform='rotate(180)'/>\n\t<use xlink:href='#gpPt9' id='gpPt10' fill='currentColor' stroke='none'/>\n\t<use xlink:href='#gpPt3' id='gpPt11' stroke='currentColor' transform='rotate(45)'/>\n\t<use xlink:href='#gpPt11' id='gpPt12' fill='currentColor' stroke='none'/>\n\t<path id='gpPt13' stroke-width='0.222' stroke='currentColor' d='M0,1.330 L1.265,0.411 L0.782,-1.067 L-0.782,-1.076 L-1.265,0.411 z'/>\n\t<use xlink:href='#gpPt13' id='gpPt14' fill='currentColor' stroke='none'/>\n\t<filter id='textbox' filterUnits='objectBoundingBox' x='0' y='0' height='1' width='1'>\n\t  <feFlood flood-color='white' flood-opacity='1' result='bgnd'/>\n\t  <feComposite in='SourceGraphic' in2='bgnd' operator='atop'/>\n\t</filter>\n\t<filter id='greybox' filterUnits='objectBoundingBox' x='0' y='0' height='1' width='1'>\n\t  <feFlood flood-color='lightgrey' flood-opacity='1' result='grey'/>\n\t  <feComposite in='SourceGraphic' in2='grey' operator='atop'/>\n\t</filter>\n</defs>\n<g fill=\"none\" color=\"white\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n</g>\n<g fill=\"none\" color=\"gray\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black' stroke-dasharray='2,4'  d='M78.08,422.40 L78.08,54.01  '/></g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black'  d='M78.08,54.01 L78.08,422.40 L569.27,422.40 L569.27,54.01 L78.08,54.01 Z  '/></g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n</g>\n\t<g id=\"gnuplot_plot_1\"  fill=\"none\"><title>gnuplot_plot_1</title>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='rgb(  0,   0, 255)'  d='M78.08,405.66 L80.20,405.65 L82.31,405.62 L84.43,405.59 L86.55,405.53 L88.67,405.47 L90.78,405.38 L92.90,405.29\n\t\tL95.02,405.17 L99.25,404.90 L103.49,404.57 L107.72,404.18 L111.96,403.73 L116.19,403.23 L120.42,402.66 L124.66,402.03\n\t\tL128.89,401.34 L133.13,400.59 L137.36,399.79 L141.60,398.92 L145.83,398.00 L150.06,397.02 L154.30,395.98 L158.53,394.88\n\t\tL162.77,393.73 L167.00,392.51 L171.24,391.24 L175.47,389.92 L179.71,388.53 L183.94,387.09 L188.17,385.59 L192.41,384.04\n\t\tL196.64,382.43 L200.88,380.77 L205.11,379.05 L209.35,377.28 L213.58,375.45 L217.82,373.57 L222.05,371.64 L226.28,369.65\n\t\tL230.52,367.61 L234.75,365.52 L238.99,363.38 L243.22,361.18 L247.46,358.94 L251.69,356.64 L255.92,354.29 L260.16,351.89\n\t\tL264.39,349.45 L268.63,346.95 L272.86,344.40 L277.10,341.81 L281.33,339.17 L285.57,336.48 L289.80,333.75 L294.03,330.96\n\t\tL298.27,328.13 L302.50,325.26 L306.74,322.34 L310.97,319.38 L315.21,316.37 L319.44,313.32 L323.68,310.22 L327.91,307.08\n\t\tL332.14,303.90 L336.38,300.68 L340.61,297.41 L344.85,294.11 L349.08,290.76 L353.32,287.37 L357.55,283.95 L361.78,280.48\n\t\tL366.02,276.98 L370.25,273.43 L374.49,269.85 L378.72,266.23 L382.96,262.57 L387.19,258.88 L391.43,255.15 L395.66,251.38\n\t\tL399.89,247.58 L404.13,243.74 L408.36,239.87 L412.60,235.96 L416.83,232.02 L421.07,228.05 L425.30,224.04 L429.53,220.00\n\t\tL433.77,215.93 L438.00,211.83 L442.24,207.69 L446.47,203.52 L450.71,199.33 L454.94,195.10 L459.18,190.84 L463.41,186.55\n\t\tL467.64,182.24 L471.88,177.89 L476.11,173.52 L480.35,169.12 L484.58,164.69 L488.82,160.23 L493.05,155.74 L497.29,151.23\n\t\tL501.52,146.69 L505.75,142.13 L509.99,137.54 L514.22,132.93 L518.46,128.29 L522.69,123.62 L526.93,118.93 L531.16,114.22\n\t\tL535.39,109.48 L539.63,104.72 L543.86,99.93 L548.10,95.13 L552.33,90.30 L556.57,85.44 L560.80,80.57 L565.04,75.67\n\t\tL569.27,70.76  '/></g>\n\t</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black'  d='M78.08,421.99 L87.08,421.99 M569.27,421.99 L560.27,421.99  '/>\t<g transform=\"translate(69.69,425.89)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"end\">\n\t\t<text><tspan font-family=\"Arial\" > 1.2</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black'  d='M78.08,355.98 L87.08,355.98 M569.27,355.98 L560.27,355.98  '/>\t<g transform=\"translate(69.69,359.88)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"end\">\n\t\t<text><tspan font-family=\"Arial\" > 1.3</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black'  d='M78.08,289.96 L87.08,289.96 M569.27,289.96 L560.27,289.96  '/>\t<g transform=\"translate(69.69,293.86)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"end\">\n\t\t<text><tspan font-family=\"Arial\" > 1.4</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black'  d='M78.08,223.94 L87.08,223.94 M569.27,223.94 L560.27,223.94  '/>\t<g transform=\"translate(69.69,227.84)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"end\">\n\t\t<text><tspan font-family=\"Arial\" > 1.5</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black'  d='M78.08,157.93 L87.08,157.93 M569.27,157.93 L560.27,157.93  '/>\t<g transform=\"translate(69.69,161.83)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"end\">\n\t\t<text><tspan font-family=\"Arial\" > 1.6</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black'  d='M78.08,91.91 L87.08,91.91 M569.27,91.91 L560.27,91.91  '/>\t<g transform=\"translate(69.69,95.81)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"end\">\n\t\t<text><tspan font-family=\"Arial\" > 1.7</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black'  d='M78.08,422.40 L78.08,413.40 M78.08,54.01 L78.08,63.01  '/>\t<g transform=\"translate(78.08,444.30)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"middle\">\n\t\t<text><tspan font-family=\"Arial\" > 0</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black'  d='M176.32,422.40 L176.32,413.40 M176.32,54.01 L176.32,63.01  '/>\t<g transform=\"translate(176.32,444.30)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"middle\">\n\t\t<text><tspan font-family=\"Arial\" > 0.2</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black'  d='M274.56,422.40 L274.56,413.40 M274.56,54.01 L274.56,63.01  '/>\t<g transform=\"translate(274.56,444.30)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"middle\">\n\t\t<text><tspan font-family=\"Arial\" > 0.4</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black'  d='M372.79,422.40 L372.79,413.40 M372.79,54.01 L372.79,63.01  '/>\t<g transform=\"translate(372.79,444.30)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"middle\">\n\t\t<text><tspan font-family=\"Arial\" > 0.6</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black'  d='M471.03,422.40 L471.03,413.40 M471.03,54.01 L471.03,63.01  '/>\t<g transform=\"translate(471.03,444.30)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"middle\">\n\t\t<text><tspan font-family=\"Arial\" > 0.8</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black'  d='M569.27,422.40 L569.27,413.40 M569.27,54.01 L569.27,63.01  '/>\t<g transform=\"translate(569.27,444.30)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"middle\">\n\t\t<text><tspan font-family=\"Arial\" > 1</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n</g>\n<g fill=\"none\" color=\"gray\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black' stroke-dasharray='2,4'  d='M78.08,422.40 L78.08,54.01  '/></g>\n<g fill=\"none\" color=\"gray\" stroke=\"black\" stroke-width=\"2.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"2.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"black\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black'  d='M78.08,54.01 L78.08,422.40 L569.27,422.40 L569.27,54.01 L78.08,54.01 Z  '/>\t<g transform=\"translate(24.73,238.21) rotate(270.00)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"middle\">\n\t\t<text><tspan font-family=\"Arial\" >inflation factor c</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<g transform=\"translate(323.67,471.30)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"middle\">\n\t\t<text xml:space=\"preserve\"><tspan font-family=\"Arial\"  xml:space=\"preserve\">k  (plateau half-width as a fraction of T)</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<g transform=\"translate(323.67,30.91)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"middle\">\n\t\t<text><tspan font-family=\"Arial\" >Trapezoidal family: triangular (k=0) to uniform (k=1)</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n</g>\n</g>\n</svg>\n\n"
+            ]
+          },
+          "metadata": {},
+          "output_type": "display_data"
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 5. Greenwood–Chase: mean shifts interpolate between the two classical methods\n\nReal processes are not centred on nominal. Let $\\Delta_i$ be the mean shift of dimension $i$\nand $\\eta_i = \\lvert \\Delta_i \\rvert / T_i$ its size as a fraction of the tolerance. The\nGreenwood–Chase (1987) model stacks the shifts **arithmetically** and the residual random\nvariation **statistically**:\n\n$$T_{assy}(\\eta) = \\sum_i \\eta_i \\lvert a_i \\rvert T_i + \\sqrt{\\sum_i \\left[ (1 - \\eta_i) a_i T_i \\right]^2}$$\n\nThe claim that this \"unifies\" worst case and RSS is easy to check: it should collapse to RSS\nat $\\eta = 0$ and to worst case at $\\eta = 1$.\n\nThis matters for FDM because $\\eta$ is genuinely large — bias, not spread, is the dominant\nerror term (see `docs/04` §1). Reading off where you sit on this curve is the honest way to\nchoose a method.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": "/* Greenwood–Chase with a common η across all terms.\n   Ts is a list of tolerances; every |a_i| = 1 here.                     */\n\ngc(Ts, η) := η*apply(\"+\", Ts) + sqrt( apply(\"+\", map(lambda([t], ((1-η)*t)^2), Ts)) )$\n\nwcase(Ts) := apply(\"+\", Ts)$\nrsse(Ts)  := sqrt( apply(\"+\", map(lambda([t], t^2), Ts)) )$\n\n/* The four tolerances from the worked example in docs/02 §10. */\nTs : [0.30, 0.20, 0.16, 0.20]$\n\n[ [\"η = 0  gives RSS      \", gc(Ts,0), rsse(Ts)],\n  [\"η = 1  gives worst case\", gc(Ts,1), wcase(Ts)] ];\n",
+      "metadata": {},
+      "execution_count": 19,
+      "outputs": [
+        {
+          "data": {
+            "text/latex": [
+              "\\left[ \\left[ \\mbox{ η = 0  gives RSS       } , 0.4422668877499196 ,0.4422668877499196 \\right]  , \\left[ \\mbox{ η = 1  gives worst case } ,0.8600000000000001 , 0.8600000000000001 \\right]  \\right] "
+            ]
+          },
+          "execution_count": 19,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": "/* How the assembly tolerance grows as the process drifts off nominal.\n   γ = 0.40 mm is the nominal gap in the worked example: where the curve\n   crosses it, the design starts failing.                                */\n\nplot2d([gc(Ts, η), 0.40], [η, 0, 1],\n       [xlabel, \"η  = mean shift as a fraction of tolerance\"],\n       [ylabel, \"assembly tolerance T_assy  (mm)\"],\n       [legend, \"Greenwood-Chase\", \"nominal gap γ = 0.40\"],\n       [title, \"Worst case and RSS are the two endpoints of one family\"])$\n",
+      "metadata": {},
+      "execution_count": 20,
+      "outputs": [
+        {
+          "data": {
+            "image/svg+xml": [
+              "<?xml version=\"1.0\" encoding=\"utf-8\"  standalone=\"no\"?>\n<svg \n width=\"600\" height=\"480\"\n viewBox=\"0 0 600 480\"\n xmlns=\"http://www.w3.org/2000/svg\"\n xmlns:xlink=\"http://www.w3.org/1999/xlink\"\n>\n\n<title>Gnuplot</title>\n<desc>Produced by GNUPLOT 6.0 patchlevel 4 </desc>\n\n<g id=\"gnuplot_canvas\">\n\n<rect x=\"0\" y=\"0\" width=\"600\" height=\"480\" fill=\"none\"/>\n<defs>\n\n\t<circle id='gpDot' r='0.5' stroke-width='0.5' stroke='currentColor'/>\n\t<path id='gpPt0' stroke-width='0.222' stroke='currentColor' d='M-1,0 h2 M0,-1 v2'/>\n\t<path id='gpPt1' stroke-width='0.222' stroke='currentColor' d='M-1,-1 L1,1 M1,-1 L-1,1'/>\n\t<path id='gpPt2' stroke-width='0.222' stroke='currentColor' d='M-1,0 L1,0 M0,-1 L0,1 M-1,-1 L1,1 M-1,1 L1,-1'/>\n\t<rect id='gpPt3' stroke-width='0.222' stroke='currentColor' x='-1' y='-1' width='2' height='2'/>\n\t<rect id='gpPt4' stroke-width='0.222' stroke='currentColor' fill='currentColor' x='-1' y='-1' width='2' height='2'/>\n\t<circle id='gpPt5' stroke-width='0.222' stroke='currentColor' cx='0' cy='0' r='1'/>\n\t<use xlink:href='#gpPt5' id='gpPt6' fill='currentColor' stroke='none'/>\n\t<path id='gpPt7' stroke-width='0.222' stroke='currentColor' d='M0,-1.33 L-1.33,0.67 L1.33,0.67 z'/>\n\t<use xlink:href='#gpPt7' id='gpPt8' fill='currentColor' stroke='none'/>\n\t<use xlink:href='#gpPt7' id='gpPt9' stroke='currentColor' transform='rotate(180)'/>\n\t<use xlink:href='#gpPt9' id='gpPt10' fill='currentColor' stroke='none'/>\n\t<use xlink:href='#gpPt3' id='gpPt11' stroke='currentColor' transform='rotate(45)'/>\n\t<use xlink:href='#gpPt11' id='gpPt12' fill='currentColor' stroke='none'/>\n\t<path id='gpPt13' stroke-width='0.222' stroke='currentColor' d='M0,1.330 L1.265,0.411 L0.782,-1.067 L-0.782,-1.076 L-1.265,0.411 z'/>\n\t<use xlink:href='#gpPt13' id='gpPt14' fill='currentColor' stroke='none'/>\n\t<filter id='textbox' filterUnits='objectBoundingBox' x='0' y='0' height='1' width='1'>\n\t  <feFlood flood-color='white' flood-opacity='1' result='bgnd'/>\n\t  <feComposite in='SourceGraphic' in2='bgnd' operator='atop'/>\n\t</filter>\n\t<filter id='greybox' filterUnits='objectBoundingBox' x='0' y='0' height='1' width='1'>\n\t  <feFlood flood-color='lightgrey' flood-opacity='1' result='grey'/>\n\t  <feComposite in='SourceGraphic' in2='grey' operator='atop'/>\n\t</filter>\n</defs>\n<g fill=\"none\" color=\"white\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n</g>\n<g fill=\"none\" color=\"gray\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black' stroke-dasharray='2,4'  d='M78.08,422.40 L78.08,54.01  '/></g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black'  d='M78.08,54.01 L78.08,422.40 L569.27,422.40 L569.27,54.01 L78.08,54.01 Z  '/></g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n</g>\n\t<g id=\"gnuplot_plot_1\" ><title>Greenwood-Chase</title>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<g transform=\"translate(501.54,75.91)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"end\">\n\t\t<text><tspan font-family=\"Arial\" >Greenwood-Chase</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='rgb(  0,   0, 255)'  d='M509.93,72.01 L552.49,72.01 M78.08,374.88 L82.31,372.26 L86.55,369.64 L90.78,367.02 L95.02,364.40 L99.25,361.77\n\t\tL103.49,359.15 L107.72,356.53 L111.96,353.91 L116.19,351.29 L120.42,348.66 L124.66,346.04 L128.89,343.42 L133.13,340.80\n\t\tL137.36,338.18 L141.60,335.56 L145.83,332.93 L150.06,330.31 L154.30,327.69 L158.53,325.07 L162.77,322.45 L167.00,319.83\n\t\tL171.24,317.20 L175.47,314.58 L179.71,311.96 L183.94,309.34 L188.17,306.72 L192.41,304.09 L196.64,301.47 L200.88,298.85\n\t\tL205.11,296.23 L209.35,293.61 L213.58,290.99 L217.82,288.36 L222.05,285.74 L226.28,283.12 L230.52,280.50 L234.75,277.88\n\t\tL238.99,275.25 L243.22,272.63 L247.46,270.01 L251.69,267.39 L255.92,264.77 L260.16,262.15 L264.39,259.52 L268.63,256.90\n\t\tL272.86,254.28 L277.10,251.66 L281.33,249.04 L285.57,246.42 L289.80,243.79 L294.03,241.17 L298.27,238.55 L302.50,235.93\n\t\tL306.74,233.31 L310.97,230.68 L315.21,228.06 L319.44,225.44 L323.68,222.82 L327.91,220.20 L332.14,217.58 L336.38,214.95\n\t\tL340.61,212.33 L344.85,209.71 L349.08,207.09 L353.32,204.47 L357.55,201.84 L361.78,199.22 L366.02,196.60 L370.25,193.98\n\t\tL374.49,191.36 L378.72,188.74 L382.96,186.11 L387.19,183.49 L391.43,180.87 L395.66,178.25 L399.89,175.63 L404.13,173.00\n\t\tL408.36,170.38 L412.60,167.76 L416.83,165.14 L421.07,162.52 L425.30,159.90 L429.53,157.27 L433.77,154.65 L438.00,152.03\n\t\tL442.24,149.41 L446.47,146.79 L450.71,144.17 L454.94,141.54 L459.18,138.92 L463.41,136.30 L467.64,133.68 L471.88,131.06\n\t\tL476.11,128.43 L480.35,125.81 L484.58,123.19 L488.82,120.57 L493.05,117.95 L497.29,115.33 L501.52,112.70 L505.75,110.08\n\t\tL509.99,107.46 L514.22,104.84 L518.46,102.22 L522.69,99.59 L526.93,96.97 L531.16,94.35 L535.39,91.73 L539.63,89.11\n\t\tL543.86,86.49 L548.10,83.86 L552.33,81.24 L556.57,78.62 L560.80,76.00 L565.04,73.38 L569.27,70.75  '/></g>\n\t</g>\n\t<g id=\"gnuplot_plot_2\" ><title>nominal gap γ = 0.40</title>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<g transform=\"translate(501.54,93.91)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"end\">\n\t\t<text><tspan font-family=\"Arial\" >nominal gap γ = 0.40</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='rgb(255,   0,   0)'  d='M509.93,90.01 L552.49,90.01 M78.08,405.65 L82.31,405.65 L86.55,405.65 L90.78,405.65 L95.02,405.65 L99.25,405.65\n\t\tL103.49,405.65 L107.72,405.65 L111.96,405.65 L116.19,405.65 L120.42,405.65 L124.66,405.65 L128.89,405.65 L133.13,405.65\n\t\tL137.36,405.65 L141.60,405.65 L145.83,405.65 L150.06,405.65 L154.30,405.65 L158.53,405.65 L162.77,405.65 L167.00,405.65\n\t\tL171.24,405.65 L175.47,405.65 L179.71,405.65 L183.94,405.65 L188.17,405.65 L192.41,405.65 L196.64,405.65 L200.88,405.65\n\t\tL205.11,405.65 L209.35,405.65 L213.58,405.65 L217.82,405.65 L222.05,405.65 L226.28,405.65 L230.52,405.65 L234.75,405.65\n\t\tL238.99,405.65 L243.22,405.65 L247.46,405.65 L251.69,405.65 L255.92,405.65 L260.16,405.65 L264.39,405.65 L268.63,405.65\n\t\tL272.86,405.65 L277.10,405.65 L281.33,405.65 L285.57,405.65 L289.80,405.65 L294.03,405.65 L298.27,405.65 L302.50,405.65\n\t\tL306.74,405.65 L310.97,405.65 L315.21,405.65 L319.44,405.65 L323.68,405.65 L327.91,405.65 L332.14,405.65 L336.38,405.65\n\t\tL340.61,405.65 L344.85,405.65 L349.08,405.65 L353.32,405.65 L357.55,405.65 L361.78,405.65 L366.02,405.65 L370.25,405.65\n\t\tL374.49,405.65 L378.72,405.65 L382.96,405.65 L387.19,405.65 L391.43,405.65 L395.66,405.65 L399.89,405.65 L404.13,405.65\n\t\tL408.36,405.65 L412.60,405.65 L416.83,405.65 L421.07,405.65 L425.30,405.65 L429.53,405.65 L433.77,405.65 L438.00,405.65\n\t\tL442.24,405.65 L446.47,405.65 L450.71,405.65 L454.94,405.65 L459.18,405.65 L463.41,405.65 L467.64,405.65 L471.88,405.65\n\t\tL476.11,405.65 L480.35,405.65 L484.58,405.65 L488.82,405.65 L493.05,405.65 L497.29,405.65 L501.52,405.65 L505.75,405.65\n\t\tL509.99,405.65 L514.22,405.65 L518.46,405.65 L522.69,405.65 L526.93,405.65 L531.16,405.65 L535.39,405.65 L539.63,405.65\n\t\tL543.86,405.65 L548.10,405.65 L552.33,405.65 L556.57,405.65 L560.80,405.65 L565.04,405.65 L569.27,405.65  '/></g>\n\t</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black'  d='M78.08,405.65 L87.08,405.65 M569.27,405.65 L560.27,405.65  '/>\t<g transform=\"translate(69.69,409.55)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"end\">\n\t\t<text><tspan font-family=\"Arial\" > 0.4</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black'  d='M78.08,332.85 L87.08,332.85 M569.27,332.85 L560.27,332.85  '/>\t<g transform=\"translate(69.69,336.75)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"end\">\n\t\t<text><tspan font-family=\"Arial\" > 0.5</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black'  d='M78.08,260.05 L87.08,260.05 M569.27,260.05 L560.27,260.05  '/>\t<g transform=\"translate(69.69,263.95)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"end\">\n\t\t<text><tspan font-family=\"Arial\" > 0.6</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black'  d='M78.08,187.24 L87.08,187.24 M569.27,187.24 L560.27,187.24  '/>\t<g transform=\"translate(69.69,191.14)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"end\">\n\t\t<text><tspan font-family=\"Arial\" > 0.7</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black'  d='M78.08,114.44 L87.08,114.44 M569.27,114.44 L560.27,114.44  '/>\t<g transform=\"translate(69.69,118.34)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"end\">\n\t\t<text><tspan font-family=\"Arial\" > 0.8</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black'  d='M78.08,422.40 L78.08,413.40 M78.08,54.01 L78.08,63.01  '/>\t<g transform=\"translate(78.08,444.30)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"middle\">\n\t\t<text><tspan font-family=\"Arial\" > 0</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black'  d='M176.32,422.40 L176.32,413.40 M176.32,54.01 L176.32,63.01  '/>\t<g transform=\"translate(176.32,444.30)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"middle\">\n\t\t<text><tspan font-family=\"Arial\" > 0.2</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black'  d='M274.56,422.40 L274.56,413.40 M274.56,54.01 L274.56,63.01  '/>\t<g transform=\"translate(274.56,444.30)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"middle\">\n\t\t<text><tspan font-family=\"Arial\" > 0.4</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black'  d='M372.79,422.40 L372.79,413.40 M372.79,54.01 L372.79,63.01  '/>\t<g transform=\"translate(372.79,444.30)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"middle\">\n\t\t<text><tspan font-family=\"Arial\" > 0.6</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black'  d='M471.03,422.40 L471.03,413.40 M471.03,54.01 L471.03,63.01  '/>\t<g transform=\"translate(471.03,444.30)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"middle\">\n\t\t<text><tspan font-family=\"Arial\" > 0.8</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black'  d='M569.27,422.40 L569.27,413.40 M569.27,54.01 L569.27,63.01  '/>\t<g transform=\"translate(569.27,444.30)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"middle\">\n\t\t<text><tspan font-family=\"Arial\" > 1</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n</g>\n<g fill=\"none\" color=\"gray\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black' stroke-dasharray='2,4'  d='M78.08,422.40 L78.08,54.01  '/></g>\n<g fill=\"none\" color=\"gray\" stroke=\"black\" stroke-width=\"2.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"2.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"black\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<path stroke='black'  d='M78.08,54.01 L78.08,422.40 L569.27,422.40 L569.27,54.01 L78.08,54.01 Z  '/>\t<g transform=\"translate(24.73,238.21) rotate(270.00)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"middle\">\n\t\t<text xml:space=\"preserve\"><tspan font-family=\"Arial\"  xml:space=\"preserve\">assembly tolerance T</tspan><tspan font-family=\"Arial\"  font-size=\"9.6\" dy=\"3.60px\" xml:space=\"preserve\">a</tspan><tspan font-family=\"Arial\"  dy=\"-3.60px\" xml:space=\"preserve\">ssy  (mm)</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<g transform=\"translate(323.67,471.30)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"middle\">\n\t\t<text xml:space=\"preserve\"><tspan font-family=\"Arial\"  xml:space=\"preserve\">η  = mean shift as a fraction of tolerance</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n\t<g transform=\"translate(323.67,30.91)\" stroke=\"none\" fill=\"black\" font-family=\"Arial\" font-size=\"12.00\"  text-anchor=\"middle\">\n\t\t<text><tspan font-family=\"Arial\" >Worst case and RSS are the two endpoints of one family</tspan></text>\n\t</g>\n</g>\n<g fill=\"none\" color=\"black\" stroke=\"currentColor\" stroke-width=\"1.00\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\">\n</g>\n</g>\n</svg>\n\n"
+            ]
+          },
+          "metadata": {},
+          "output_type": "display_data"
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": "The curve is the honest answer to \"which method should I use?\". You are not choosing between\ntwo rival theories — you are choosing a point on a line, and $\\eta$ is what fixes it.\n\nFor a well-calibrated printer whose bias you have measured and compensated, $\\eta$ might be\n0.1–0.2 and you sit near the RSS end. For an uncharacterised printer where the bias could be\nanything up to the tolerance, $\\eta \\approx 1$ and worst case is simply correct. **Measuring\nyour process is what buys you the right to move left along this curve**, and the horizontal\ndistance you gain is worth roughly a factor of two in assembly tolerance.\n\n## 6. The worked example from `docs/02` §10\n\nA PCB retained between a printed boss and a printed lid rib. The gap $G$ is the residual\nclearance; $G < 0$ means the lid will not close.\n\n| $i$ | Dimension | $a_i$ | $\\lambda_i$ | $T_i$ |\n|---|---|---|---|---|\n| 1 | Enclosure internal height | $+1$ | 10.00 | 0.30 |\n| 2 | Boss height | $-1$ | 5.00 | 0.20 |\n| 3 | PCB thickness | $-1$ | 1.60 | 0.16 |\n| 4 | Lid rib height | $-1$ | 3.00 | 0.20 |\n\nEverything below re-derives the numbers quoted in the prose document, so the two cannot\ndrift apart.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": "λs : [10.00, 5.00, 1.60, 3.00]$\nas : [   +1,   -1,   -1,   -1]$\nTs : [ 0.30, 0.20, 0.16, 0.20]$\n\nγ : apply(\"+\", map(\"*\", as, λs));            /* nominal gap */\n\n/* Standard normal CDF, for turning a z-score into a failure probability. */\nΦ(z) := float( (1 + erf(z/sqrt(2)))/2 )$\n\naT : map(\"*\", map(abs, as), Ts)$             /* |a_i| T_i */\n\nT_wc  : apply(\"+\", aT);\nT_rss : float( sqrt( apply(\"+\", map(lambda([u], u^2), aT)) ) );\n\nσ_G      : T_rss/3$\nP_fail   : Φ(-γ/σ_G);\none_in_N : round(1/P_fail);\n",
+      "metadata": {},
+      "execution_count": 21,
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "0.3999999999999999\n0.8600000000000001\n0.4422668877499196\n0.0033309007877438956"
+          ]
+        },
+        {
+          "data": {
+            "text/latex": [
+              "300"
+            ]
+          },
+          "execution_count": 21,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": "/* Contribution ranking — the most actionable output of any stack-up.\n   Because it is a SQUARED measure it concentrates hard: a term with twice\n   the tolerance of another contributes four times the variance.\n\n   (Note: avoid a bare \"%\" inside a Maxima string — it is read as an\n    output-line reference.)                                              */\n\nnames : [\"enclosure height\", \"boss height\", \"PCB thickness\", \"lid rib height\"]$\ntot   : apply(\"+\", map(lambda([u], u^2), aT))$\nshare : map(lambda([u], float(100*u^2/tot)), aT)$\n\nfor i thru 4 do\n    print( names[i], \" : \", share[i], \" percent of variance\" )$\n\n/* Bender's inflation factor: the correction applied when a quoted T is\n   really a 2σ figure rather than the 3σ that RSS assumes. */\nT_bender : 1.5 * T_rss;\nP_bender : Φ(-γ/(T_bender/3));\n",
+      "metadata": {},
+      "execution_count": 23,
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "enclosure height  :  46.0122699386503  percent of variance\nboss height  :  20.449897750511248  percent of variance\nPCB thickness  :  13.087934560327197  percent of variance\nlid rib height  :  20.449897750511248  percent of variance\n0.6634003316248794"
+          ]
+        },
+        {
+          "data": {
+            "text/latex": [
+              "0.03523618170963694"
+            ]
+          },
+          "execution_count": 23,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 7. When correlation helps, and when it hurts\n\nBack to §1. The cross term in the variance is\n\n$$2 \\sum_{i<j} a_i \\, a_j \\, \\rho_{ij} \\, \\sigma_i \\, \\sigma_j$$\n\nFor positively correlated dimensions ($\\rho > 0$) the sign of each cross term is the sign of\n$a_i a_j$. So:\n\n- **same sign in the chain** ($a_i a_j > 0$) — variance **increases**, correlation hurts\n- **opposite sign** ($a_i a_j < 0$) — variance **decreases**, correlation helps\n\nRSS assumes $\\rho = 0$ throughout, so it does not merely err on one side. **It is blind, and\nit can be wrong in either direction.**\n\nThis matters enormously for 3D printing, where features on one part share a first-layer\noffset, a flow calibration and a thermal history, so $\\rho$ is routinely 0.5 or more. Two\ncases from `docs/02` §10 make the point.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": "/* General correlated variance for a chain.\n   corr(i,j) supplies ρ; σ is taken as T/3 throughout.                    */\n\nvarG(avec, Tvec, corr) := block([m : length(avec), σv, s],\n    σv : map(lambda([t], t/3), Tvec),\n    s  : 0,\n    for i thru m do\n      for j thru m do\n        s : s + avec[i]*avec[j]*corr(i,j)*σv[i]*σv[j],\n    float(s))$\n\nindep_corr(i,j) := if i = j then 1 else 0$\n\n/* CASE A — the lid/boss chain. Printed Z dimensions are 1, 2 and 4;\n   the PCB (3) is independent. ρ = 0.6 among the printed ones.           */\ncaseA(i,j) := if i = j then 1\n              elseif i = 3 or j = 3 then 0\n              else 0.6$\n\nvA_indep : varG(as, Ts, indep_corr)$\nvA_corr  : varG(as, Ts, caseA)$\n\nprint(\"Case A  σ_G independent =\", float(sqrt(vA_indep)),\n      \"  P(G<0) =\", Φ(-γ/sqrt(vA_indep)))$\nprint(\"Case A  σ_G correlated  =\", float(sqrt(vA_corr)),\n      \"  P(G<0) =\", Φ(-γ/sqrt(vA_corr)))$\n",
+      "metadata": {},
+      "execution_count": 24,
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "Case A  σ_G independent = 0.14742229591663988   P(G<0) = 0.0033309007877438956\nCase A  σ_G correlated  = 0.10519822558706333   P(G<0) = 7.1666324683195e-5"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": "/* CASE B — four printed spacers in series inside a printed cavity.\n   Now EVERY spacer enters with a = -1, so all pairwise products are +1\n   and the correlation accumulates instead of cancelling.                */\n\nasB : [   +1,   -1,   -1,   -1,   -1]$\nTsB : [ 0.30, 0.20, 0.20, 0.20, 0.20]$\nγB  : 21.00 - 4*5.00$\n\ncaseB(i,j) := if i = j then 1\n              elseif i = 1 or j = 1 then 0      /* cavity independent */\n              else 0.6$                          /* spacers correlated */\n\nvB_indep : varG(asB, TsB, indep_corr)$\nvB_corr  : varG(asB, TsB, caseB)$\n\nprint(\"Case B  σ_G independent =\", float(sqrt(vB_indep)),\n      \"  3σ =\", float(3*sqrt(vB_indep)),\n      \"  P(G<0) =\", Φ(-γB/sqrt(vB_indep)))$\nprint(\"Case B  σ_G correlated  =\", float(sqrt(vB_corr)),\n      \"  3σ =\", float(3*sqrt(vB_corr)),\n      \"  P(G<0) =\", Φ(-γB/sqrt(vB_corr)))$\nprint(\"Worst case bound        =\", apply(\"+\", map(abs, map(\"*\", asB, TsB))))$\nprint(\"Failure rate ratio      =\", float(Φ(-γB/sqrt(vB_corr))/Φ(-γB/sqrt(vB_indep))))$\n",
+      "metadata": {},
+      "execution_count": 25,
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "Case B  σ_G independent = 0.16666666666666669   3σ = 0.5   P(G<0) =\n                         9.865876449133282e-10\nCase B  σ_G correlated  = 0.2444949442785633   3σ = 0.7334848328356899\n                           P(G<0) = 2.1562697195443015e-5\nWorst case bound        = 1.0999999999999999\nFailure rate ratio      = 21855.83542082295"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": "### Reading the two cases\n\n**Case A — correlation helped.** The failure rate fell from 1-in-300 to about 1-in-14,000.\nThe reason is physical and obvious once seen: the cavity height enters the chain with $+1$\nwhile the boss and rib enter with $-1$. If the printer runs everything tall, the cavity grows\n*and* the boss and rib grow, and the errors largely cancel. RSS could not see this, because\nit had already assumed the dimensions were unrelated.\n\n**Case B — correlation hurt.** Four printed spacers in series, all entering with $-1$. Now a\ncommon bias accumulates instead of cancelling. The effective assembly tolerance moves from\n0.50 (RSS) most of the way to 1.10 (worst case), and the failure rate rises by a factor of\nabout **22,000**. Nothing about the parts changed — only the assumption.\n\n### What to take from this\n\n1. **RSS is not conservative and it is not optimistic. It is blind.** It can be wrong by four\n   orders of magnitude in the failure rate, in either direction.\n2. **The sign structure of your chain determines which way.** A chain that alternates signs\n   is protected by correlation; a chain of same-sign terms is punished by it.\n3. **This is the argument for Monte Carlo with explicit correlation groups** over any\n   closed-form method, for any assembly where several dimensions come off the same machine in\n   the same session — i.e. essentially every 3D-printed assembly.\n\nYou do not need an accurate $\\rho$. Running the analysis at $\\rho = 0$, $0.5$ and $1$ and\nseeing whether the decision changes is worth far more than a precise value, and usually takes\none line.\n\n---\n\n## Summary\n\n| Section | Result | Use it when |\n|---|---|---|\n| §1 | $Var(G) = a^{T} \\Sigma a$ | Always — everything else is a special case |\n| §2 | Worst case / RSS $= \\sqrt{n}$ for equal terms | Sizing up how much RSS is claiming |\n| §3 | $c = 3\\sigma/T$ reproduces all of Scholz Figure 6 | A dimension is not normally distributed |\n| §4 | $c = \\sqrt{3(1+k^2)/2}$ for the trapezoidal family | You want one tunable shape, not a menu |\n| §5 | Greenwood–Chase interpolates worst case ↔ RSS | The process is off-centre — i.e. FDM |\n| §6 | Numbers matching `docs/02` §10 | Checking the prose has not drifted |\n| §7 | Correlation moves the answer either way | Several dimensions share a cause |\n\n**The practical hierarchy**, in decreasing order of how much it changes your answer:\n\n1. Are the input tolerances real, or guesses? (Nothing else matters if they are guesses.)\n2. Is the process centred? (§5 — the biggest correction for FDM, and the one you can remove\n   by measuring and compensating.)\n3. Are the dimensions correlated? (§7 — orders of magnitude, in either direction.)\n4. Are the distributions normal? (§3–4 — tens of percent.)\n5. Worst case or RSS? (§2 — a factor of $\\sqrt{n}$, and the one everyone argues about.)\n\nMost discussion of tolerance analysis is about item 5. Almost all of the error is in items\n1 to 3.\n",
+      "metadata": {}
+    }
+  ]
+}
