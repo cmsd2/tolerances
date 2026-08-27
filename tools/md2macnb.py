@@ -37,6 +37,12 @@ LINK_RULES: list[tuple[re.Pattern[str], str]] = [
 ]
 
 LINK_RE = re.compile(r"(?<!!)\[([^\]]*)\]\(([^)\s]+)\)")
+
+# nbconvert derives heading ids from the heading text with spaces hyphenated and
+# punctuation kept -- "## 6. Measurement and its uncertainty" becomes
+# "6.-Measurement-and-its-uncertainty", NOT GitHub's "6-measurement-and-its-uncertainty".
+# Any cross-document anchor must be written in nbconvert's form; check a rendered
+# page with `grep -o 'id="[^"]*"'` when adding one.
 FENCE_RE = re.compile(r"^\s*(```|~~~)")
 H2_RE = re.compile(r"^## ")
 

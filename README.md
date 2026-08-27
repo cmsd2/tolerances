@@ -3,7 +3,17 @@
 An open, self-hosted alternative to proprietary tolerance-analysis software (RD8, CETOL 6σ,
 3DCS, VisVSA), targeted at FreeCAD + KiCad + FDM printing.
 
-**📖 Read it at [cmsd2.github.io/tolerances](https://cmsd2.github.io/tolerances/)**
+<p align="center">
+  <a href="https://cmsd2.github.io/tolerances/">
+    <img alt="Read the documentation at cmsd2.github.io/tolerances"
+         src="https://img.shields.io/badge/%F0%9F%93%96%20Read%20the%20documentation-cmsd2.github.io%2Ftolerances-0969da?style=for-the-badge">
+  </a>
+  <br>
+  <a href="https://github.com/cmsd2/tolerances/actions/workflows/pages.yml">
+    <img alt="Pages build status"
+         src="https://github.com/cmsd2/tolerances/actions/workflows/pages.yml/badge.svg">
+  </a>
+</p>
 
 The premise: **the mathematics of tolerance analysis is easy and free. The hard parts are
 knowing your actual process capability, and keeping one honest source of truth for every
