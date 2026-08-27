@@ -9,7 +9,7 @@ Pages.
 
 ## `mathematics/tolerance-mathematics.macnb`
 
-Maxima notebook deriving the formulas used in [`docs/02-methods.md`](../docs/02-methods.md).
+Maxima notebook deriving the formulas used in `guide/02-methods.macnb`.
 Saved in Jupyter `.ipynb` format, so it opens in Jupyter, VS Code, or any `.ipynb` tool, and
 runs against a Maxima kernel.
 
@@ -26,7 +26,7 @@ and the four ways it fails. You do not need to have read Scholz first.
 | 3 | **Scholz's Figure 6 derived from scratch.** `c = 3σ/T`; all eight densities integrated, every value matching to three decimals |
 | 4 | Trapezoidal family: `σ² = T²(1+k²)/6`, `c = √(3(1+k²)/2)`, with uniform and triangular as its endpoints |
 | 5 | Greenwood–Chase verified to collapse to RSS at η=0 and worst case at η=1 |
-| 6 | The worked example from `docs/02` §10, recomputed |
+| 6 | The worked example from `guide/02-methods` §10, recomputed independently |
 | 7 | Correlated variance for both the sign-alternating and same-sign cases |
 
 ### Why it exists
