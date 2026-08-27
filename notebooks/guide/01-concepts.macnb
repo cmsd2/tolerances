@@ -1,0 +1,64 @@
+{
+  "nbformat": 4,
+  "nbformat_minor": 5,
+  "metadata": {
+    "kernelspec": {
+      "name": "maxima",
+      "display_name": "Maxima",
+      "language": "maxima"
+    },
+    "aximar": {}
+  },
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "source": "# 01 — Concepts and General Approaches\n\nThis document establishes vocabulary and surveys the approaches the literature offers. It is\ndeliberately light on formulas; those are in [02 — Methods](02-methods.html).\n\n---\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 1. Variation, not error\n\nA manufactured dimension is not a number. It is a random variable with a distribution,\nproduced by a process. \"Error\" implies a mistake; \"variation\" implies an inherent property of\nthe process that you characterise, budget for, and design around. The shift in language is\nthe whole discipline.\n\nThree things describe a dimension in this framework:\n\n- **Nominal** (λ): the value in the CAD model.\n- **Bias / mean shift** (Δ = μ − λ): how far the process actually centres from nominal.\n  Usually assumed zero. In FDM it is emphatically not zero.\n- **Spread** (σ, or a tolerance T): how much part-to-part variation there is around the mean.\n\nClassical tolerancing collapses these into a single symmetric ±T and assumes Δ = 0. Much of\nthe sophistication in the literature is about relaxing that.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 2. Tolerance, limits, and fits\n\nA **tolerance** is the total permissible variation of a dimension. **Limits** are the\nresulting maximum and minimum values (upper/lower limits of size). Tolerances may be\n**bilateral** (10.0 ±0.1), **unilateral** (10.0 +0.2/−0.0), or expressed as **limits**\n(10.0/10.2).\n\nTwo terms from the ISO 286 fits system that are worth internalising even though you will\nrarely achieve their grades on a printer:\n\n- **MMC** (maximum material condition): the limit of size at which the feature contains the\n  most material — largest shaft, smallest hole. This is the fit-critical condition.\n- **LMC** (least material condition): the opposite — smallest shaft, largest hole. This is\n  the wall-thickness- and strength-critical condition.\n\nA **fit** is the relationship between two mating features: **clearance** (always a gap),\n**interference** (always negative gap, i.e. press), or **transition** (may be either\ndepending on where in the tolerance zones the two parts land).\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 3. The tolerance chain\n\nA **tolerance chain** (or loop, or stack) is a path through an assembly from one side of a\nfunctional gap to the other, passing through part features. Each step contributes its\nnominal and its variation. The gap closes the loop.\n\nThe functional requirement is expressed as an **assembly criterion**, conventionally written\nG, which is a function of the part dimensions:\n\n    G = f(L₁, L₂, …, Lₙ)\n\nand the requirement is a condition on G, most often G ≥ 0 (parts must not interfere) or\nG ∈ [G_min, G_max] (there must be clearance, but not too much).\n\nConstructing G correctly is the part that requires engineering judgement, and it is the part\nthat expensive software automates. Three rules keep you honest:\n\n1. **The loop must close.** Start at one face of the gap and end at the other, with no jumps.\n   If you cannot draw the path on a sketch, you do not have a chain.\n2. **Signs come from direction.** A dimension traversed in the positive direction contributes\n   +1; traversed against, −1. Errors of sign are the most common mistake.\n3. **Only include what varies.** A dimension that is not on the path does not belong in the\n   chain, no matter how important it is elsewhere.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 4. Analysis versus synthesis\n\nThese are the two directions of the same problem and the literature keeps them distinct:\n\n- **Tolerance analysis** (bottom-up): given part tolerances, what is the assembly variation?\n  This is what you do to check a design.\n- **Tolerance synthesis** / **allocation** (top-down): given a required assembly variation,\n  how should tolerance be distributed among the parts to satisfy it at least cost? This is\n  what you do to *fix* a design.\n\nAnalysis is easy; allocation is an optimisation problem and is where most of the recent\nresearch sits. Hong and Chang's 2002 survey and Nigam and Turner's 1995 review both organise\nthe field along this axis. For your purposes: analyse by hand, allocate by intuition plus a\ncontribution ranking (see [02 §7](02-methods.html)), and reach for formal optimisation only if\nyou find yourself repeatedly trading tolerances across many parts.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 5. The three families of method\n\n### Worst-case (arithmetic) tolerancing\n\nAssume every dimension is simultaneously at its least favourable limit. Sum the tolerances.\n\n*Guarantees* 100% interchangeability: if worst-case passes, no assembly can ever fail to fit.\nIt is also brutally conservative — the probability of every dimension in a six-part chain\nbeing at its extreme in the correct direction simultaneously is vanishingly small.\n\nUse it when: safety-critical; you are building one unit and cannot tolerate a rework; the\nchain is short (two or three terms, where the conservatism is mild); or the parts are\ngenuinely not independent.\n\n### Statistical tolerancing (RSS and its descendants)\n\nTreat dimensions as independent random variables and combine their variances. The classical\nform is root-sum-square. It yields dramatically tighter predicted assembly variation, at the\nprice of accepting some small fraction of non-conforming assemblies.\n\nScholz's framing is the clearest: worst-case and RSS *\"provide conservative and optimistic\nbenchmarks, respectively.\"* Neither is the truth. The truth is between them, and the whole\napparatus of inflation factors and mean-shift models is an attempt to say where.\n\nThe known weaknesses, each of which has a fix in the literature:\n\n| Assumption | Reality | Fix |\n|---|---|---|\n| Dimensions are independent | Same machine, same batch, same operator ⇒ correlation | Explicit covariance ([02 §6](02-methods.html)) |\n| T = 3σ | Process owners often quote T meaning 2σ | Bender's 1.5 inflation factor |\n| Distributions are normal | Tool wear ⇒ uniform; two-cavity moulds ⇒ bimodal | Distributional inflation factors c |\n| Processes are centred on nominal | Centring is hard and drifts | Mean-shift models (Greenwood & Chase) |\n\n### Monte Carlo simulation\n\nSample each dimension from its distribution, evaluate G, repeat. Build the empirical\ndistribution of G and read off whatever you want: mean, spread, percentiles, P(G < 0).\n\nThis is the method to default to, because it makes no linearity assumption, handles arbitrary\ndistributions, handles correlation, handles asymmetric and offset distributions, and handles\nnon-linear geometry (angles, projections, contact conditions). It also refuses to hide its\nassumptions: you have to state a distribution for every input, which is exactly the\ndiscipline you want.\n\nIts cost is that it gives you a number, not a formula. Which is why you still compute\nworst-case and RSS alongside — they are cheap, and their divergence from the Monte Carlo\nresult tells you something is odd in your model.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 6. Process capability\n\nThe bridge between \"what my process does\" and \"what I can put in a stack-up.\"\n\n- **Cp** = (USL − LSL) / 6σ — how the process *spread* compares to the tolerance width.\n  Ignores centring.\n- **Cpk** = min[(USL − μ)/3σ, (μ − LSL)/3σ] — the same, penalised for being off-centre.\n  Cpk ≤ Cp always, with equality only for a perfectly centred process.\n\nRules of thumb: Cpk ≥ 1.33 is a capable process; Cpk ≥ 1.0 is marginal; Cpk < 1.0 means you\nare producing scrap by design. A well-tuned desktop FDM printer on a modest dimension will\nstruggle to reach Cpk 1.33 against a ±0.1 mm tolerance, and will manage it easily against\n±0.4 mm. That statement is the entire reason to measure: it tells you which tolerances you\ncan afford to specify.\n\nTwo cautions. First, Cp and Cpk assume normality; FDM data is often skewed and sometimes\nbimodal, and the indices then mislead. ISO 22514-4 defines percentile-based variants for\nexactly this case. Second, the \"Six Sigma\" convention of adding a 1.5σ long-term mean shift\nis an industrial convention with a contested empirical basis — use it if you want a\nconservative margin, but do not treat it as physics.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 7. Cost and the point of the exercise\n\nThe economic argument for statistical tolerancing is that manufacturing cost rises steeply,\nroughly exponentially, as tolerance tightens. Every classical text has a version of the\ncost–tolerance curve.\n\nFor a desktop printer this argument mostly does *not* apply — printing to ±0.1 mm costs the\nsame as printing to ±0.5 mm, because you cannot buy precision at any price; you either have\nit or you don't. What replaces cost as the currency is **feasibility and effort**: a tighter\ntolerance means slower prints, more calibration, more scrapped parts, more post-processing\n(reaming, filing, sanding), or a different process entirely.\n\nSo the practical objective shifts. In industry, tolerance analysis exists to *save money*.\nFor you it exists to **decide whether the design is buildable at all on the equipment you\nown, and if not, which single change makes it buildable**. That change is very often a\ndesign change rather than a tolerance change — see\n[06 §\"Design moves\"](06-workflow.html#design-moves-that-beat-tolerance-analysis).\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 8. Key characteristics\n\nNot every dimension matters. A **key characteristic** (KC) is one whose variation\nsignificantly affects fit, function or safety. The discipline is to identify the handful of\nKCs early, track them explicitly, and leave everything else to general tolerances.\n\nFor a printed enclosure with a PCB, the KC list is typically short and predictable:\n\n- connector aperture position relative to the board datum\n- lid-to-boss height stack (board retention)\n- mounting hole pattern position\n- snap-fit or thread engagement depth\n- any bearing, shaft or magnet pocket\n\nFive to ten items. Everything else gets ISO 2768-medium and no further thought.\n\n---\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## Where this comes from\n\nThe two orienting surveys, if you want the shape of the whole field:\n\n- **Nigam, S.D. & Turner, J.U. (1995)**, \"Review of statistical approaches to tolerance\n  analysis\", *Computer-Aided Design* 27(1), 6–15. Covers RSS, system moments, quadrature,\n  reliability index, Taguchi methods and Monte Carlo.\n- **Hong, Y.S. & Chang, T.C. (2002)**, \"A comprehensive review of tolerancing research\",\n  *Int. J. Production Research* 40(11), 2425–2459.\n\nThe single most useful free document on the methods themselves:\n\n- **Scholz, F. (1995)**, *Tolerance Stack Analysis Methods*, Boeing Information & Support\n  Services, ISSTECH-95-030. Freely available. Rigorous, honest about the weaknesses of every\n  method, and the source of most of [02](02-methods.html).\n\nThe standard practitioner text:\n\n- **Fischer, B.R. (2011)**, *Mechanical Tolerance Stackup and Analysis*, 2nd ed., CRC Press.\n  Written by a member of the ASME Y14.5 committee.\n\nFull annotated list, including the Springer titles available on your subscription, in\n[09 — Bibliography](09-bibliography.html).\n",
+      "metadata": {}
+    }
+  ]
+}

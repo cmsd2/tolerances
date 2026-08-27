@@ -1,0 +1,84 @@
+{
+  "nbformat": 4,
+  "nbformat_minor": 5,
+  "metadata": {
+    "kernelspec": {
+      "name": "maxima",
+      "display_name": "Maxima",
+      "language": "maxima"
+    },
+    "aximar": {}
+  },
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "source": "# 08 — KiCad and the PCB Mechanical Interface\n\nThe PCB is where two variation regimes meet: a controlled industrial process with tolerances\nin the 0.05–0.25 mm range, and a desktop printer with tolerances several times larger. Almost\nevery enclosure-fit failure lives at this boundary.\n\nThe mental model that makes this tractable: **treat the PCB as a purchased part with a\ndatasheet.** You do not control its variation; you look it up, you model it as a uniform\ndistribution over the stated limits, and you verify it on the first article.\n\n*API specifics below are illustrative — KiCad's Python API changes between major versions.\nPrefer `kicad-cli` and `kiutils`, which are more stable than `pcbnew` bindings.*\n\n---\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 1. The mechanical interface list\n\nThe dimensions that cross from the electrical domain into the mechanical one. Every one\nbelongs in `parameters.yaml`.\n\n| Quantity | Typically from | Feeds |\n|---|---|---|\n| Board outline X, Y | KiCad Edge.Cuts | cavity size |\n| Board thickness | fab spec | lid/boss stack |\n| Mounting hole positions | KiCad | boss positions |\n| Mounting hole diameter | KiCad + fab tolerance | screw clearance |\n| Connector position on board | KiCad footprint placement | aperture position |\n| Connector body dimensions | component datasheet | aperture size |\n| Connector height above board | datasheet | cavity height |\n| Tallest component height | datasheet | cavity height |\n| Keep-out zones | KiCad courtyards | internal ribs, bosses |\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 2. Getting numbers out of KiCad\n\nTwo routes. Prefer the second for scripting.\n\n**`pcbnew` Python bindings** — full-featured, requires KiCad's own Python. Internal units are\nnanometres; `pcbnew.ToMM()` converts.\n\n```python\nimport pcbnew\nboard = pcbnew.LoadBoard(\"pcb/controller.kicad_pcb\")\n\nbbox = board.GetBoardEdgesBoundingBox()\noutline_x = pcbnew.ToMM(bbox.GetWidth())\noutline_y = pcbnew.ToMM(bbox.GetHeight())\n\nfor fp in board.GetFootprints():\n    if fp.GetReference() == \"J1\":\n        pos = fp.GetPosition()\n        j1_x, j1_y = pcbnew.ToMM(pos.x), pcbnew.ToMM(pos.y)\n```\n\n**`kiutils`** — a pure-Python parser for KiCad's s-expression files. No KiCad installation\nneeded, so it works in CI, and it does not break when KiCad changes its C++ bindings. Slower\nand lower-level, but for extracting a handful of coordinates that does not matter. This is the\nbetter choice for a build script.\n\n**`kicad-cli`** — the supported command-line interface (KiCad 7+). Use it for exports:\n\n```sh\nkicad-cli pcb export step --output pcb/controller.step pcb/controller.kicad_pcb\nkicad-cli pcb export drc  --output reports/drc.rpt      pcb/controller.kicad_pcb\n```\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 3. Which direction should the sync go?\n\nGenuinely a judgement call, and it depends on which constrains which.\n\n- **Enclosure-led** (YAML → KiCad): the box has an existing size, so the board must fit. Push\n  the outline and mounting holes into the board.\n- **Board-led** (KiCad → YAML): the electronics determine the size, and the enclosure follows.\n  Extract the outline and hole positions into the parameter file.\n\n**Board-led is the usual and better default.** The board's size is driven by component\nplacement and routing, which are hard constraints; the enclosure is soft. Extract from KiCad,\nand let the enclosure parameters be derived.\n\nWhichever direction you choose, **also write a consistency check that runs the other way**\nand fails loudly on disagreement. That check is the thing that catches the \"PCB grew 2 mm\nthree weeks ago and nobody told the enclosure\" failure, which is the single most common way\nthis goes wrong.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 4. Fabrication tolerances\n\nWorking numbers for typical low-cost fab. **Confirm against your actual supplier's capability\npage, and record the URL and read-date in the parameter file** — these change.\n\n| Feature | Typical | Model as |\n|---|---|---|\n| Board thickness | ±10%, min ±0.127 mm | Normal (fabs control this well) |\n| Routed outline | ±0.15 to ±0.25 mm | Uniform |\n| V-scored outline | ±0.3 mm or worse | Uniform |\n| Plated hole diameter | ±0.075 mm | Uniform |\n| Non-plated hole diameter | ±0.05 mm | Uniform |\n| Hole-to-outline registration | ±0.15 mm | Uniform |\n| Layer-to-layer registration | ±0.075 mm | Uniform |\n| Solder mask registration | ±0.075 mm | Uniform |\n| Min annular ring, Class 2, after tolerances | 0.05 mm | IPC-2221 limit |\n\n**The one people miss: hole-to-outline registration.** Drilling and routing may reference\ndifferent datums, so the error between a mounting hole and the board edge is *not* the\nindividual hole tolerance — it is the registration figure, and it is usually larger. Since\nyour printed bosses locate against the cavity walls (i.e. the board *edge*), this is the\ntolerance that actually governs whether your screws line up. Get it right and you will avoid\nthe classic \"the holes are perfect but nothing lines up\" result.\n\nModel as uniform, not normal — see [02 §8](02-methods.html). A supplier's ± is a limit they\nundertake not to exceed, not a 3σ figure, and treating it as 3σ understates the tails by a\nlot.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 5. Worked chain: a USB-C aperture in a printed wall\n\nThe canonical failure. The plug must enter the aperture; a USB-C receptacle offers roughly\n±0.4 mm of positional latitude before the plug fouls.\n\n| # | Contributor | Typical | Source |\n|---|---|---|---|\n| 1 | Board outline routing tolerance | ±0.20 | fab spec, uniform |\n| 2 | Connector placement on board | ±0.10 reflow | assembly |\n| 3 | Connector body to its own footprint centre | ±0.15 | datasheet |\n| 4 | Board seating clearance in the cavity | ±0.25 | design + printed cavity |\n| 5 | Printed wall position relative to cavity datum | ±0.20 | printer, external XY |\n| 6 | Printed aperture position within the wall | ±0.15 | printer, external XY |\n\nBoard edge to connector centre as *designed* is exact by construction in KiCad, so it\ncontributes nominal but no variation.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": "cnames : [\"board routing\", \"connector placement\", \"connector body\",\n          \"board seating\", \"wall position\", \"aperture position\"]$\ncT     : [0.20, 0.10, 0.15, 0.25, 0.20, 0.15]$\nbudget : 0.40$                     /* USB-C positional latitude */\n\nwc  : apply(\"+\", cT);\nrss : float( sqrt( apply(\"+\", map(lambda([u], u^2), cT)) ) );\n\nprint(\"worst case\", wc, if wc  <= budget then \"PASS\" else \"FAIL\")$\nprint(\"RSS       \", rss, if rss <= budget then \"PASS\" else \"FAIL\")$\n\ntot : apply(\"+\", map(lambda([u], u^2), cT))$\nfor i thru length(cT) do\n    print( cnames[i], \":\", float(100*cT[i]^2/tot), \"percent of variance\" )$\n\n/* What if the top contributor were eliminated entirely? */\nprint(\"RSS without board seating:\",\n      float( sqrt( tot - 0.25^2 ) ))$\n",
+      "metadata": {},
+      "execution_count": 2,
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "1.05\n0.44440972086577946\nworst case 1.05 FAIL\nRSS        0.44440972086577946 FAIL\nboard routing : 20.25316455696203 percent of variance\nconnector placement : 5.0632911392405076 percent of variance\nconnector body : 11.39240506329114 percent of variance\nboard seating : 31.645569620253163 percent of variance\nwall position : 20.25316455696203 percent of variance\naperture position : 11.39240506329114 percent of variance\nRSS without board seating: 0.3674234614174767"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": "**Both fail**, and this is with machine placement — hand-soldered, contributor 2 triples and\nit gets worse.\n\nThe instructive part is the last line: **no tolerance tightening fixes this.** Even\neliminating the largest contributor outright leaves RSS at 0.37 mm against a 0.40 mm budget.\nThe answer has to be a design change:\n\n- **Oversize the aperture and add a generous internal chamfer.** Removes contributors 5 and 6\n  from mattering and guides the plug. Nearly free.\n- **Locate the board off the connector, not the board edge.** Make the aperture a close-fitting\n  pocket around the connector body, with the board floating on slotted mounting holes. This\n  deletes contributors 1 and 4 — the two largest — from the chain entirely. This is the right\n  answer, and it is the one a stack-up tool will never suggest.\n- **Use a panel-mount connector on a pigtail.** Decouples the domains completely, at the cost\n  of a cable.\n- **Recess the receptacle** behind a larger opening so the plug's own moulding does the\n  guiding.\n\nThe general principle: **choose your datum to be the feature that matters.** Locating the board\nby its edge when what you care about is the connector position is a self-inflicted wound.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 6. Encoding fab limits as design rules\n\nKiCad supports custom design rules in a `.kicad_dru` file alongside the board, in\ns-expression syntax:\n\n```\n(version 1)\n\n(rule \"min annular ring\"\n    (constraint annular_width (min 0.13mm))\n    (condition \"A.Type == 'Via'\"))\n\n(rule \"edge clearance\"\n    (constraint edge_clearance (min 0.3mm))\n    (condition \"A.Type != 'Zone'\"))\n```\n\nTwo ready-made rule sets for common fabs, worth starting from rather than writing your own:\n\n- [`labtroll/KiCad-DesignRules`](https://github.com/labtroll/KiCad-DesignRules) — JLCPCB\n- [`Cimos/KiCad-CustomDesignRules`](https://github.com/Cimos/KiCad-CustomDesignRules) —\n  JLCPCB and PCBWay, validated against a test board\n\nNote that custom rules are evaluated *after* the board's own constraints, and the more\nrestrictive value wins — so a global setting looser than your custom rule is harmless, but one\nthat is tighter will silently dominate.\n\nDRC does not check mechanical fit. Encoding fab limits here protects the board; the enclosure\nchain is still yours to analyse.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 7. Checking fit in 3D\n\n`kicad-cli pcb export step` produces a STEP model of the board and its components, which you\ncan import into FreeCAD and check against the enclosure.\n\n**What this catches:** gross interference, a component you forgot about, a connector fouling a\nrib, insufficient headroom.\n\n**What it does not catch, and this is the important caveat:** the STEP model is *nominal*.\nComponent 3D models are idealised and frequently wrong — many are community-contributed,\nsome are approximate, some are simply the wrong part. A visual clearance check in FreeCAD\ntells you nothing about variation, and it can tell you nothing reliable about a component\nwhose model nobody verified.\n\nSo: use the STEP import for gross checks and visualisation. Take critical component\ndimensions — connector heights, body sizes, keep-outs — **from the datasheet**, into\n`parameters.yaml`, with the datasheet as the `reference`. Never from a 3D model you did not\nauthor.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 8. Component placement accuracy\n\nFabrication tolerance covers the bare board. Where the assembler *put* the part is separate:\n\n| Method | Typical placement accuracy |\n|---|---|\n| Machine pick-and-place, reflow | ±0.05 mm machine, improved by self-alignment on small passives |\n| Machine placement, large connectors | ±0.10 mm — self-alignment is weak on heavy parts |\n| Hand soldering, through-hole | ±0.3 mm or worse, and often tilted |\n| Hand soldering, SMD connector | highly variable; measure your own |\n\nGet real numbers from your assembly house if you use one. If you hand-solder, **measure your\nown placement on a scrap board** — this is a five-minute characterisation that most people\nskip, and for a hand-built prototype it is frequently the largest single contributor in the\nchain.\n\n---\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## Reading\n\n- **IPC-2615**, *Printed Board Dimensions and Tolerances* — the definitive document, derived\n  from ASME Y14.5M-1994. Superseded IPC-D-300G. Dated but unreplaced.\n- **IPC-2221**, generic printed board design — clearances, annular ring, conductor widths.\n- **IPC-7351B**, surface mount land patterns.\n- **IPC-A-600** / **IPC-6012** — what a fab house is permitted to ship you.\n",
+      "metadata": {}
+    }
+  ]
+}

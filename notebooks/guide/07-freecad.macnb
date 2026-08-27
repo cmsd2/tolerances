@@ -1,0 +1,54 @@
+{
+  "nbformat": 4,
+  "nbformat_minor": 5,
+  "metadata": {
+    "kernelspec": {
+      "name": "maxima",
+      "display_name": "Maxima",
+      "language": "maxima"
+    },
+    "aximar": {}
+  },
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "source": "# 07 — FreeCAD Integration\n\nGoal: the FreeCAD model contains **no typed dimensions**. Every number that matters comes from\n`parameters.yaml`, via a spreadsheet.\n\n*API specifics below are illustrative — FreeCAD's Python API shifts between major versions.\nVerify against your installed version before building on them.*\n\n---\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 1. The mechanism\n\nFreeCAD's **Spreadsheet workbench** provides named cells. Give a cell an alias (right-click →\nAlias, or `sheet.setAlias('B2', 'boss_height')`), and any numeric field anywhere in the\ndocument can reference it through the expression engine:\n\n    Spreadsheet.boss_height\n\nThe same syntax works in a sketch constraint, a Pad length, a placement, a pattern count —\nthe expression engine is uniform across FreeCAD. Labels containing awkward characters are\nescaped as `<<My Label>>`.\n\nThat is the whole mechanism. The spreadsheet becomes the model's control panel, and our job is\nto generate it from the YAML rather than typing into it.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 2. Naming conventions\n\nAliases must match parameter IDs in `parameters.yaml` exactly. Adopt:\n\n- `snake_case`, no leading digits (FreeCAD rejects aliases starting with a digit)\n- prefix by part: `encl_cavity_height`, `lid_rib_height`, `pcb_thickness`\n- suffix derived values: `encl_wall_thickness_x2`\n- never abbreviate inconsistently — `ht` in one place and `height` in another will cost you an\n  hour eventually\n\nReserve one spreadsheet named `Params` per document, holding *only* generated values, and a\nsecond named `Derived` for spreadsheet-internal formulas you write by hand. Never mix\ngenerated and hand-written cells in one sheet: the sync script overwrites, and it will eat\nyour formulas.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 3. Generating the spreadsheet from YAML\n\nHeadless, via `FreeCADCmd` (macOS:\n`/Applications/FreeCAD.app/Contents/MacOS/FreeCADCmd`):\n\n```python\nimport FreeCAD, yaml\n\nparams = yaml.safe_load(open(\"params/parameters.yaml\"))\ndoc = FreeCAD.openDocument(\"cad/enclosure.FCStd\")\nsheet = doc.getObject(\"Params\") or doc.addObject(\"Spreadsheet::Sheet\", \"Params\")\n\nrow = 1\nsheet.set(f\"A{row}\", \"parameter\"); sheet.set(f\"B{row}\", \"value\")\nsheet.set(f\"C{row}\", \"source\");    sheet.set(f\"D{row}\", \"note\")\n\nfor name, p in params[\"parameters\"].items():\n    row += 1\n    sheet.set(f\"A{row}\", name)\n    sheet.set(f\"B{row}\", str(p[\"nominal\"]))\n    sheet.setAlias(f\"B{row}\", name)\n    sheet.set(f\"C{row}\", p.get(\"source\", \"?\"))\n    sheet.set(f\"D{row}\", p.get(\"description\", \"\"))\n\ndoc.recompute()\ndoc.save()\n```\n\nCarrying `source` and `description` into columns C and D costs nothing and means the\nprovenance is visible while you are modelling — which is when you most need to know whether a\nnumber is real.\n\nRun it as: `FreeCADCmd tools/sync_freecad.py`\n\n**Sync is one-directional: YAML → FreeCAD.** If you change a value in the spreadsheet it will\nbe silently reverted on the next sync. This is the correct behaviour and should be documented\nat the top of the sheet, in a cell, in capitals.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 4. Modelling at nominal\n\nModel everything at nominal. Do **not** model at MMC/LMC or build tolerance offsets into the\ngeometry — that conflates design intent with process compensation and makes the model\nunusable when you change printers. Process compensation lives in the slicer\n([04 §9](04-process-capability.html)).\n\nThe one exception worth making: where a *functional* clearance is a design decision rather\nthan a process artefact — a 0.3 mm gap you have deliberately chosen for a sliding fit — model\nit, and make it a named parameter so it appears in stacks.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 5. Worst-case and extreme-condition checks\n\nThe parametric model gives you something a spreadsheet stack-up cannot: an actual geometric\ncheck at the tolerance extremes.\n\nProcedure:\n\n1. Generate a variant parameter set at the worst-case combination for the chain of interest —\n   the analysis tool knows the signs, so it knows which direction each parameter goes.\n2. Sync it into the spreadsheet, recompute.\n3. Check for interference: Part workbench → Boolean → **Intersection** of the two solids. A\n   non-empty, non-zero-volume result is an interference, and `shape.Volume` gives you the\n   magnitude.\n4. Restore nominal.\n\nThis catches an entire class of error that 1D stack-ups miss: interference somewhere other\nthan where you drew your chain. It is slow and manual, so reserve it for key characteristics.\n\nThe same loop, driven by sampled rather than extreme values, is the Monte-Carlo-over-CAD\napproach in [02 §11](02-methods.html). At a second or two per recompute, a few thousand samples\nis an overnight job — viable, occasionally necessary, rarely worth it.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 6. Practical cautions\n\n**Topological naming.** FreeCAD's long-standing weakness: sketches and features reference\nfaces and edges by generated names, and changing a parameter enough to alter the topology can\nre-map those names and break downstream features. FreeCAD 1.0 introduced substantial\nmitigation but it is not wholly solved.\n\nConsequences for this workflow, and they are real:\n\n- **Sketch on datum planes**, not on model faces, wherever a downstream feature depends on it.\n- **Keep parameter sweeps modest.** A worst-case check moving a dimension by 0.3 mm is fine.\n  A Monte Carlo that occasionally makes a wall thickness negative will produce broken\n  recomputes, and — worse — recomputes that *appear* to succeed.\n- **Always check the recompute succeeded** before trusting a measurement:\n  `doc.recompute()` then inspect `obj.State` / `doc.RecomputesFrozen`, and treat any object\n  in error as a failed sample rather than a valid one. Silently averaging over broken\n  geometry is the failure mode to guard against.\n\n**Spreadsheet recompute order.** Deep chains of spreadsheet formulas referencing each other\ncan require two recomputes to settle. If a synced value doesn't propagate, recompute twice\nbefore debugging anything else.\n\n**Units.** Cells set as bare numbers are unitless; FreeCAD interprets them per the field they\nfeed. Setting `'5.0'` into a length field gives 5 mm under default preferences, but this is\npreference-dependent. Setting `'5.0 mm'` explicitly is unambiguous and worth the extra\ncharacters.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 7. What FreeCAD does not give you\n\n- **No tolerance analysis.** There is no stack-up capability, native or in any mature addon.\n  That is what this project builds.\n- **GD&T annotation is limited.** TechDraw carries geometric-tolerance symbols, but it is a\n  drafting aid, not a semantic model — nothing validates your datum scheme or propagates\n  tolerance information into geometry. It is fine for producing a drawing a supplier will\n  read; it is not model-based definition in the ISO 16792 sense.\n- **No variational geometry.** The model is a single nominal configuration. Perturbation\n  means recompute, which is why CAD-based Monte Carlo is slow.\n\nNone of this is a problem, because the analysis lives outside the CAD tool by design. The CAD\ntool's job is to be driven by the parameter file and to render nominal geometry faithfully.\n",
+      "metadata": {}
+    }
+  ]
+}

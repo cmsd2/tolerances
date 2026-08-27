@@ -34,3 +34,6 @@ gerbers/
 # --- OS ---
 .DS_Store
 Thumbs.db
+
+# --- Site build product (rendered by .github/workflows/pages.yml) ---
+docs/pages/

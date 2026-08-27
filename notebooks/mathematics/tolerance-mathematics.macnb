@@ -29,7 +29,7 @@
       "cell_type": "code",
       "source": "/* The covariance matrix of the part dimensions, shown for n = 3.\n   Σ[i,j] = ρ[i,j] σ[i] σ[j],  with ρ[i,i] = 1.                       */\n\nload(linearalgebra)$\nn : 3$\n\nΣ : genmatrix(\n      lambda([i,j], if i = j then σ[i]^2 else ρ[i,j]*σ[i]*σ[j]),\n      n, n);\n",
       "metadata": {},
-      "execution_count": 6,
+      "execution_count": 26,
       "outputs": [
         {
           "data": {
@@ -37,7 +37,7 @@
               "\\ifx\\endpmatrix\\undefined\\pmatrix{\\else\\begin{pmatrix}\\fi \\sigma_{1}^2&\\sigma_{1}\\,\\rho_{1,2}\\,\\sigma_{2}&\\sigma_{1}\\,\\rho_{1,3}\\,\\sigma_{3}\\cr\\sigma_{1}\\,\\sigma_{2}\\,\\rho_{2,1}&\\sigma_{2}^2&\\sigma_{2}\\,\\rho_{2,3}\\,\\sigma_{3}\\cr \\sigma_{1}\\,\\sigma_{3}\\,\\rho_{3,1}&\\sigma_{2}\\,\\sigma_{3}\\,\\rho_{3,2}&\\sigma_{3}^2\\cr \\ifx\\endpmatrix\\undefined}\\else\\end{pmatrix}\\fi "
             ]
           },
-          "execution_count": 6,
+          "execution_count": 26,
           "metadata": {},
           "output_type": "execute_result"
         }
@@ -47,7 +47,7 @@
       "cell_type": "code",
       "source": "/* `a` was bound to a matrix above, so a[i] would return a row.\n   Clear it and use plain indexed symbols.                              */\nkill(a)$\n\n/* Expand aᵀ Σ a as a double sum, imposing ρ[j,i] = ρ[i,j]. */\nρsym(i,j) := if i = j then 1 elseif i < j then ρ[i,j] else ρ[j,i]$\n\nVarG : expand( sum( sum( a[i]*a[j]*ρsym(i,j)*σ[i]*σ[j], j, 1, n), i, 1, n) );\n",
       "metadata": {},
-      "execution_count": 5,
+      "execution_count": 27,
       "outputs": [
         {
           "data": {
@@ -55,7 +55,7 @@
               "a_{3}^2\\,\\sigma_{3}^2+2\\,a_{2}\\,\\sigma_{2}\\,\\rho_{2,3}\\,a_{3}\\,\\sigma_{3}+2\\,a_{1}\\,\\sigma_{1}\\,\\rho_{1,3}\\,a_{3}\\,\\sigma_{3}+a_{2}^2\\,\\sigma_{2}^2+2\\,a_{1}\\,\\sigma_{1}\\,\\rho_{1,2}\\,a_{2}\\,\\sigma_{2}+a_{1}^2\\,\\sigma_{1}^2"
             ]
           },
-          "execution_count": 5,
+          "execution_count": 27,
           "metadata": {},
           "output_type": "execute_result"
         }
@@ -65,7 +65,7 @@
       "cell_type": "code",
       "source": "/* Setting every ρ = 0 recovers the classical RSS variance.\n   This is the ONLY thing that separates RSS from the truth.            */\n\nindep : makelist(makelist(ρ[i,j] = 0, j, i+1, n), i, 1, n-1)$\nindep : flatten(indep)$\n\nVarG_indep : expand( subst(indep, VarG) );\n",
       "metadata": {},
-      "execution_count": 7,
+      "execution_count": 28,
       "outputs": [
         {
           "data": {
@@ -73,7 +73,7 @@
               "a_{3}^2\\,\\sigma_{3}^2+a_{2}^2\\,\\sigma_{2}^2+a_{1}^2\\,\\sigma_{1}^2"
             ]
           },
-          "execution_count": 7,
+          "execution_count": 28,
           "metadata": {},
           "output_type": "execute_result"
         }
@@ -88,7 +88,7 @@
       "cell_type": "code",
       "source": "/* n identical terms, each with tolerance T and |a| = 1. */\nassume(T > 0, m > 0)$\n\nwc(m)  := m*T$\nrss(m) := sqrt(m*T^2)$\n\n/* The ratio is simply √n : RSS claims a factor-√n reduction over worst case. */\nratio : radcan( wc(m)/rss(m) );\n",
       "metadata": {},
-      "execution_count": 9,
+      "execution_count": 29,
       "outputs": [
         {
           "data": {
@@ -96,7 +96,7 @@
               "\\sqrt{m}"
             ]
           },
-          "execution_count": 9,
+          "execution_count": 29,
           "metadata": {},
           "output_type": "execute_result"
         }
@@ -111,7 +111,7 @@
       "cell_type": "code",
       "source": "/* Helper. Every density here is symmetric about 0 on [-T,T], so we supply\n   the density on the half-interval [0,T] and double the integrals.\n\n   Returns [total area (must be 1), σ², c = 3σ/T].                       */\n\nassume(T > 0)$\n\ninfl(fhalf) := block([area, σ2],\n    area : ratsimp( 2*integrate(fhalf, x, 0, T) ),\n    σ2   : ratsimp( 2*integrate(x^2*fhalf, x, 0, T) ),\n    [area, σ2, radcan(3*sqrt(σ2)/T)] )$\n\n/* --- Uniform:  f = 1/(2T) --------------------------------------------- */\nuni : infl( 1/(2*T) );\n",
       "metadata": {},
-      "execution_count": 10,
+      "execution_count": 30,
       "outputs": [
         {
           "data": {
@@ -119,7 +119,7 @@
               "\\left[ 1 , {{T^2}\\over{3}} , \\sqrt{3} \\right] "
             ]
           },
-          "execution_count": 10,
+          "execution_count": 30,
           "metadata": {},
           "output_type": "execute_result"
         }
@@ -129,7 +129,7 @@
       "cell_type": "code",
       "source": "/* --- Triangular:  f = (T - |x|)/T²  ------------------------------------ */\ntri : infl( (T - x)/T^2 );\n\n/* --- Elliptical / semicircular:  f = 2√(T²-x²)/(πT²) ------------------- */\nell : infl( 2*sqrt(T^2 - x^2)/(%pi*T^2) );\n\n/* --- Half cosine wave:  f = (π/4T)·cos(πx/2T) -------------------------- */\ncos_ : infl( (%pi/(4*T))*cos(%pi*x/(2*T)) );\n\n[tri, ell, cos_];\n",
       "metadata": {},
-      "execution_count": 11,
+      "execution_count": 31,
       "outputs": [
         {
           "name": "stdout",
@@ -144,7 +144,7 @@
               "\\left[ \\left[ 1 , {{T^2}\\over{6}} , {{\\sqrt{3}}\\over{\\sqrt{2}}} \\right]  ,\\left[ 1 , {{T^2}\\over{4}} , {{3}\\over{2}} \\right]  , \\left[ 1 , {{\\left(\\pi^2-8\\right)\\,T^2}\\over{\\pi^2}} , {{3\\,\\sqrt{\\pi^2-8}}\\over{\\pi}} \\right]\\right] "
             ]
           },
-          "execution_count": 11,
+          "execution_count": 31,
           "metadata": {},
           "output_type": "execute_result"
         }
@@ -154,7 +154,7 @@
       "cell_type": "code",
       "source": "/* --- Symmetric beta family:  f ∝ (1 - (x/T)²)^(α-1)  on [-T,T] ---------\n   Substituting t = (x/T)² turns both integrals into beta functions, so the\n   whole family comes out in one closed form rather than case by case.   */\n\nassume(α > 0)$\n\nnum : (T^3/2) * beta(3/2, α)$      /* ∫ x² f  (unnormalised)  */\nden : (T/2)   * beta(1/2, α)$      /* ∫ f     (unnormalised)  */\n\n/* Γ(α+3/2) = (α+1/2)·Γ(α+1/2), so the ratio collapses.\n   minfactorial() applies exactly that recurrence.                       */\nσ2_beta : ratsimp( minfactorial( makefact( makegamma(num/den) ) ) );\nc_beta  : radcan( 3*sqrt(σ2_beta)/T );\n",
       "metadata": {},
-      "execution_count": 14,
+      "execution_count": 32,
       "outputs": [
         {
           "name": "stdout",
@@ -169,7 +169,7 @@
               "{{3}\\over{\\sqrt{2\\,\\alpha+1}}}"
             ]
           },
-          "execution_count": 14,
+          "execution_count": 32,
           "metadata": {},
           "output_type": "execute_result"
         }
@@ -179,7 +179,7 @@
       "cell_type": "code",
       "source": "/* Assemble the table and check every entry against Scholz Figure 6.\n   Columns: name | c (exact) | c (numeric) | Scholz | match?              */\n\ncb(A) := subst(α = A, c_beta)$\n\nrows : [\n  [\"normal (T = 3σ)\",        1,              1.000 ],\n  [\"beta  α=β=3\",            cb(3),          1.134 ],\n  [\"triangular\",             tri[3],         1.225 ],\n  [\"half cosine wave\",       cos_[3],        1.306 ],\n  [\"beta  α=β=2 (parabolic)\",cb(2),          1.342 ],\n  [\"elliptical\",             ell[3],         1.500 ],\n  [\"uniform\",                uni[3],         1.732 ],\n  [\"beta  α=β=0.6 (bimodal)\",cb(0.6),        2.023 ]\n]$\n\ncheck(r) := block([exact : r[2], num : float(r[2]), ref : r[3]],\n    [ r[1], exact, num, ref,\n      if abs(num - ref) < 0.001 then \"OK\" else \"MISMATCH\" ])$\n\ntable : map(check, rows)$\nfor row in table do print(row)$\n",
       "metadata": {},
-      "execution_count": 15,
+      "execution_count": 33,
       "outputs": [
         {
           "name": "stdout",
@@ -199,7 +199,7 @@
       "cell_type": "code",
       "source": "/* Trapezoidal on [-T,T]: flat at height h on [-kT, kT], linear to 0 at ±T.\n   Integrate the half-interval in two pieces and double.                 */\n\nassume(k > 0, k < 1)$\n\nh : 1/(T*(1+k))$                         /* normalising height */\n\nflat : integrate(h, x, 0, k*T)$\nramp : integrate(h*(T-x)/(T-k*T), x, k*T, T)$\narea_trap : ratsimp( 2*(flat + ramp) );   /* must be 1 */\n\nσ2_flat : integrate(x^2*h, x, 0, k*T)$\nσ2_ramp : integrate(x^2*h*(T-x)/(T-k*T), x, k*T, T)$\nσ2_trap : ratsimp( 2*(σ2_flat + σ2_ramp) );\n\nc_trap  : radcan( 3*sqrt(σ2_trap)/T );\n",
       "metadata": {},
-      "execution_count": 16,
+      "execution_count": 34,
       "outputs": [
         {
           "name": "stdout",
@@ -214,7 +214,7 @@
               "{{\\sqrt{3}\\,\\sqrt{k^2+1}}\\over{\\sqrt{2}}}"
             ]
           },
-          "execution_count": 16,
+          "execution_count": 34,
           "metadata": {},
           "output_type": "execute_result"
         }
@@ -224,7 +224,7 @@
       "cell_type": "code",
       "source": "/* Endpoints and the Scholz Figure 6 entry (k = 0.5). */\n\nendpoints : [\n  [\"k → 0  (triangular)\", radcan(limit(c_trap, k, 0, plus)), float(sqrt(3/2))],\n  [\"k = 0.5 (Scholz)\",    subst(k = 1/2, c_trap),            1.369          ],\n  [\"k → 1  (uniform)\",    radcan(limit(c_trap, k, 1, minus)), float(sqrt(3))]\n]$\n\nfor r in endpoints do\n    print(r[1], \" : exact = \", r[2], \" numeric = \", float(r[2]), \" expected = \", r[3])$\n",
       "metadata": {},
-      "execution_count": 17,
+      "execution_count": 35,
       "outputs": [
         {
           "name": "stdout",
@@ -239,7 +239,7 @@
       "cell_type": "code",
       "source": "plot2d(c_trap, [k, 0, 1],\n       [xlabel, \"k  (plateau half-width as a fraction of T)\"],\n       [ylabel, \"inflation factor c\"],\n       [legend, false],\n       [title, \"Trapezoidal family: triangular (k=0) to uniform (k=1)\"])$\n",
       "metadata": {},
-      "execution_count": 18,
+      "execution_count": 36,
       "outputs": [
         {
           "data": {
@@ -261,7 +261,7 @@
       "cell_type": "code",
       "source": "/* Greenwood–Chase with a common η across all terms.\n   Ts is a list of tolerances; every |a_i| = 1 here.                     */\n\ngc(Ts, η) := η*apply(\"+\", Ts) + sqrt( apply(\"+\", map(lambda([t], ((1-η)*t)^2), Ts)) )$\n\nwcase(Ts) := apply(\"+\", Ts)$\nrsse(Ts)  := sqrt( apply(\"+\", map(lambda([t], t^2), Ts)) )$\n\n/* The four tolerances from the worked example in docs/02 §10. */\nTs : [0.30, 0.20, 0.16, 0.20]$\n\n[ [\"η = 0  gives RSS      \", gc(Ts,0), rsse(Ts)],\n  [\"η = 1  gives worst case\", gc(Ts,1), wcase(Ts)] ];\n",
       "metadata": {},
-      "execution_count": 19,
+      "execution_count": 37,
       "outputs": [
         {
           "data": {
@@ -269,7 +269,7 @@
               "\\left[ \\left[ \\mbox{ η = 0  gives RSS       } , 0.4422668877499196 ,0.4422668877499196 \\right]  , \\left[ \\mbox{ η = 1  gives worst case } ,0.8600000000000001 , 0.8600000000000001 \\right]  \\right] "
             ]
           },
-          "execution_count": 19,
+          "execution_count": 37,
           "metadata": {},
           "output_type": "execute_result"
         }
@@ -279,7 +279,7 @@
       "cell_type": "code",
       "source": "/* How the assembly tolerance grows as the process drifts off nominal.\n   γ = 0.40 mm is the nominal gap in the worked example: where the curve\n   crosses it, the design starts failing.                                */\n\nplot2d([gc(Ts, η), 0.40], [η, 0, 1],\n       [xlabel, \"η  = mean shift as a fraction of tolerance\"],\n       [ylabel, \"assembly tolerance T_assy  (mm)\"],\n       [legend, \"Greenwood-Chase\", \"nominal gap γ = 0.40\"],\n       [title, \"Worst case and RSS are the two endpoints of one family\"])$\n",
       "metadata": {},
-      "execution_count": 20,
+      "execution_count": 38,
       "outputs": [
         {
           "data": {
@@ -301,7 +301,7 @@
       "cell_type": "code",
       "source": "λs : [10.00, 5.00, 1.60, 3.00]$\nas : [   +1,   -1,   -1,   -1]$\nTs : [ 0.30, 0.20, 0.16, 0.20]$\n\nγ : apply(\"+\", map(\"*\", as, λs));            /* nominal gap */\n\n/* Standard normal CDF, for turning a z-score into a failure probability. */\nΦ(z) := float( (1 + erf(z/sqrt(2)))/2 )$\n\naT : map(\"*\", map(abs, as), Ts)$             /* |a_i| T_i */\n\nT_wc  : apply(\"+\", aT);\nT_rss : float( sqrt( apply(\"+\", map(lambda([u], u^2), aT)) ) );\n\nσ_G      : T_rss/3$\nP_fail   : Φ(-γ/σ_G);\none_in_N : round(1/P_fail);\n",
       "metadata": {},
-      "execution_count": 21,
+      "execution_count": 39,
       "outputs": [
         {
           "name": "stdout",
@@ -316,7 +316,7 @@
               "300"
             ]
           },
-          "execution_count": 21,
+          "execution_count": 39,
           "metadata": {},
           "output_type": "execute_result"
         }
@@ -326,7 +326,7 @@
       "cell_type": "code",
       "source": "/* Contribution ranking — the most actionable output of any stack-up.\n   Because it is a SQUARED measure it concentrates hard: a term with twice\n   the tolerance of another contributes four times the variance.\n\n   (Note: avoid a bare \"%\" inside a Maxima string — it is read as an\n    output-line reference.)                                              */\n\nnames : [\"enclosure height\", \"boss height\", \"PCB thickness\", \"lid rib height\"]$\ntot   : apply(\"+\", map(lambda([u], u^2), aT))$\nshare : map(lambda([u], float(100*u^2/tot)), aT)$\n\nfor i thru 4 do\n    print( names[i], \" : \", share[i], \" percent of variance\" )$\n\n/* Bender's inflation factor: the correction applied when a quoted T is\n   really a 2σ figure rather than the 3σ that RSS assumes. */\nT_bender : 1.5 * T_rss;\nP_bender : Φ(-γ/(T_bender/3));\n",
       "metadata": {},
-      "execution_count": 23,
+      "execution_count": 40,
       "outputs": [
         {
           "name": "stdout",
@@ -341,7 +341,7 @@
               "0.03523618170963694"
             ]
           },
-          "execution_count": 23,
+          "execution_count": 40,
           "metadata": {},
           "output_type": "execute_result"
         }
@@ -356,7 +356,7 @@
       "cell_type": "code",
       "source": "/* General correlated variance for a chain.\n   corr(i,j) supplies ρ; σ is taken as T/3 throughout.                    */\n\nvarG(avec, Tvec, corr) := block([m : length(avec), σv, s],\n    σv : map(lambda([t], t/3), Tvec),\n    s  : 0,\n    for i thru m do\n      for j thru m do\n        s : s + avec[i]*avec[j]*corr(i,j)*σv[i]*σv[j],\n    float(s))$\n\nindep_corr(i,j) := if i = j then 1 else 0$\n\n/* CASE A — the lid/boss chain. Printed Z dimensions are 1, 2 and 4;\n   the PCB (3) is independent. ρ = 0.6 among the printed ones.           */\ncaseA(i,j) := if i = j then 1\n              elseif i = 3 or j = 3 then 0\n              else 0.6$\n\nvA_indep : varG(as, Ts, indep_corr)$\nvA_corr  : varG(as, Ts, caseA)$\n\nprint(\"Case A  σ_G independent =\", float(sqrt(vA_indep)),\n      \"  P(G<0) =\", Φ(-γ/sqrt(vA_indep)))$\nprint(\"Case A  σ_G correlated  =\", float(sqrt(vA_corr)),\n      \"  P(G<0) =\", Φ(-γ/sqrt(vA_corr)))$\n",
       "metadata": {},
-      "execution_count": 24,
+      "execution_count": 41,
       "outputs": [
         {
           "name": "stdout",
@@ -371,7 +371,7 @@
       "cell_type": "code",
       "source": "/* CASE B — four printed spacers in series inside a printed cavity.\n   Now EVERY spacer enters with a = -1, so all pairwise products are +1\n   and the correlation accumulates instead of cancelling.                */\n\nasB : [   +1,   -1,   -1,   -1,   -1]$\nTsB : [ 0.30, 0.20, 0.20, 0.20, 0.20]$\nγB  : 21.00 - 4*5.00$\n\ncaseB(i,j) := if i = j then 1\n              elseif i = 1 or j = 1 then 0      /* cavity independent */\n              else 0.6$                          /* spacers correlated */\n\nvB_indep : varG(asB, TsB, indep_corr)$\nvB_corr  : varG(asB, TsB, caseB)$\n\nprint(\"Case B  σ_G independent =\", float(sqrt(vB_indep)),\n      \"  3σ =\", float(3*sqrt(vB_indep)),\n      \"  P(G<0) =\", Φ(-γB/sqrt(vB_indep)))$\nprint(\"Case B  σ_G correlated  =\", float(sqrt(vB_corr)),\n      \"  3σ =\", float(3*sqrt(vB_corr)),\n      \"  P(G<0) =\", Φ(-γB/sqrt(vB_corr)))$\nprint(\"Worst case bound        =\", apply(\"+\", map(abs, map(\"*\", asB, TsB))))$\nprint(\"Failure rate ratio      =\", float(Φ(-γB/sqrt(vB_corr))/Φ(-γB/sqrt(vB_indep))))$\n",
       "metadata": {},
-      "execution_count": 25,
+      "execution_count": 42,
       "outputs": [
         {
           "name": "stdout",

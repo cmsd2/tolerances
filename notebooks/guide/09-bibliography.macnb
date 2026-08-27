@@ -1,0 +1,59 @@
+{
+  "nbformat": 4,
+  "nbformat_minor": 5,
+  "metadata": {
+    "kernelspec": {
+      "name": "maxima",
+      "display_name": "Maxima",
+      "language": "maxima"
+    },
+    "aximar": {}
+  },
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "source": "# 09 — Annotated Bibliography\n\nAccess markers: **[free]** · **[springer]** available on a Springer institutional subscription\n· **[open]** open-access journal · **[buy]** paid.\n\n---\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## Start here\n\n**Scholz, F. (1995).** *Tolerance Stack Analysis Methods.* Boeing Information & Support\nServices, ISSTECH-95-030, December 1995. **[free]** —\n[faculty.washington.edu/fscholz/Reports/isstech-95-030.pdf](https://faculty.washington.edu/fscholz/Reports/isstech-95-030.pdf)\n\n> The best free document on the subject, and the primary source for\n> [02 — Methods](02-methods.html). Covers worst-case, RSS, RSS with inflation factors for\n> non-normal distributions, and several treatments of mean shifts. Gives the assumptions\n> before each formula and is candid about which are unlikely to hold. The distribution\n> inflation-factor table (Figure 6) is reproduced in [02 §5.2](02-methods.html) and derived\n> from first principles in the [Maxima notebook](tolerance-mathematics.html).\n> Its companion, Scholz (1995) *\"A Critical Look at Tolerance Stacking Methods\"*, carries the\n> derivations.\n\n**Fischer, B.R. (2011).** *Mechanical Tolerance Stackup and Analysis*, 2nd ed. CRC Press /\nTaylor & Francis. ISBN 978-1439815724. **[buy]**\n\n> The practitioner's standard text, by a member of the ASME Y14.5 committee. Covers form\n> tolerances in stackups, 3D tolerance analysis, and Six Sigma concepts. If you buy one book\n> on this subject, buy this one.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## Surveys — the shape of the field\n\n**Nigam, S.D. & Turner, J.U. (1995).** \"Review of statistical approaches to tolerance\nanalysis.\" *Computer-Aided Design* 27(1), 6–15. **[buy]**\n\n> The canonical survey. Covers RSS, system moments, quadrature, the reliability index,\n> Taguchi methods and Monte Carlo. Still the clearest map of the statistical methods.\n\n**Hong, Y.S. & Chang, T.C. (2002).** \"A comprehensive review of tolerancing research.\"\n*Int. J. Production Research* 40(11), 2425–2459.\n[doi:10.1080/00207540210128242](https://doi.org/10.1080/00207540210128242) **[buy]**\n\n> Broader than Nigam & Turner: representation, specification, analysis, allocation and\n> transfer. The reference for placing any particular technique in context.\n\n**\"A comprehensive review of tolerance analysis models.\"** *Int. J. Adv. Manuf. Technol.*\n(2018). [doi:10.1007/s00170-018-1920-2](https://doi.org/10.1007/s00170-018-1920-2)\n**[springer]**\n\n> Modern survey of the mathematical models — vector loop, small displacement torsors,\n> T-Maps, matrix and Jacobian methods. The place to start if you need to go beyond 1D.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## Springer books on your subscription\n\n**Geometric Tolerancing Standard to Machine Design: A Design-for-Fit Approach** (2024).\n[doi:10.1007/978-3-031-47585-6](https://link.springer.com/book/10.1007/978-3-031-47585-6)\n**[springer]**\n\n> **The most directly useful of the Springer titles for your purposes.** Works from \"what fit\n> do I need\" back to the geometric tolerance statements required to achieve it — which is\n> precisely the question a designer actually has, and the reverse of how most GD&T books are\n> organised.\n\n**Colosimo, B.M. & Senin, N. (eds.) (2011).** *Geometric Tolerances: Impact on Product\nDesign, Quality Inspection and Statistical Process Monitoring.* Springer.\n[doi:10.1007/978-1-84996-311-4](https://link.springer.com/book/10.1007/978-1-84996-311-4)\n**[springer]**\n\n> Tolerance selection, how tolerances stack in assemblies, inspection of geometrically\n> toleranced parts, and SPC. Strong on the measurement and monitoring half, which is the part\n> [04 — Process capability](04-process-capability.html) is about.\n\n**Wartzack, S. (ed.) (2024).** *Research in Tolerancing.* Springer.\n[doi:10.1007/978-3-031-64225-8](https://link.springer.com/book/10.1007/978-3-031-64225-8)\n**[springer]**\n\n> Current research. Notable chapters: \"Tolerances in Mechanisms\" (Husch & Walter), and\n> \"Sampling-Based Tolerance-Cost Optimization\", which is the modern treatment of tolerance\n> allocation via metaheuristics over Monte Carlo analysis.\n\n**ElMaraghy, H.A. (ed.) (1998).** *Geometric Design Tolerancing: Theories, Standards and\nApplications.* Springer.\n[doi:10.1007/978-1-4615-5797-5](https://link.springer.com/book/10.1007/978-1-4615-5797-5)\n**[springer]**\n\n> The classic collected volume. Dated in its computational assumptions, foundational in its\n> theory.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## Statistical tolerancing — primary sources\n\n**Greenwood, W.H. & Chase, K.W. (1987).** \"A new tolerance analysis method for designers and\nmanufacturers.\" *J. Engineering for Industry* 109(2), 112–116. **[buy]**\n\n> The mean-shift model that unifies worst-case and RSS as endpoints of one family. The\n> formula in [02 §5.3](02-methods.html).\n\n**Bender, A. (1968).** \"Statistical Tolerancing as it Relates to Quality Control and the\nDesigner.\" SAE Technical Paper 680490. **[buy]**\n\n> The origin of the 1.5 inflation factor (\"benderising\"). Scholz cites a 1962 date; the\n> widely available publication is the 1968 SAE paper. Read Scholz's §3.3 first — his account\n> of *why* 1.5 is a fix for a communication failure about the meaning of T, rather than an\n> empirical universal, corrects the common folklore.\n\n**Chase, K.W. & Parkinson, A.R. (1991).** \"A survey of research in the application of\ntolerance analysis to the design of mechanical assemblies.\" *Research in Engineering Design*\n3, 23–37. **[springer]**\n\n> Chase's group at Brigham Young (ADCATS) produced the vector-loop / direct-linearisation\n> method, which remains the most implementable approach to 2D and 3D chains.\n\n**Grohmann, P. & Walter, M.S.J. (2021).** \"Speeding up Statistical Tolerance Analysis to Real\nTime.\" *Applied Sciences* 11(9), 4207.\n[doi:10.3390/app11094207](https://doi.org/10.3390/app11094207) **[open]**\n\n> Open access, with working code at\n> [github.com/EinmalmitProfis/Statistical-Tolerance-Analysis-and-Synthesis-with-Python](https://github.com/EinmalmitProfis/Statistical-Tolerance-Analysis-and-Synthesis-with-Python).\n> Covers analysis *and* synthesis with GPU acceleration. The most rigorous open codebase in\n> this space and the best model to copy from.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## Additive manufacturing accuracy\n\n**Accuracy of FDM PLA Polymer 3D Printing Technology Based on Tolerance Fields.** *Processes*\n11(10), 2810 (2023). [doi:10.3390/pr11102810](https://doi.org/10.3390/pr11102810) **[open]**\n\n> Places FDM PLA within the ISO 286 IT-grade system — roughly IT9 to IT14 depending on\n> nominal size and axis — and presents a calibration procedure. The empirical anchor for the\n> claims in [03 §3](03-standards.html) and the size-dependence model in\n> [04 §7](04-process-capability.html).\n\n**The Impact of Elevated Printing Speeds and Filament Color on the Dimensional Precision and\nTensile Properties of FDM-Printed PLA Specimens** (2025). PMC12349424. **[open]**\n\n> Evidence that filament colour affects dimensional outcomes — the basis for treating\n> (brand, material, colour) as the unit of characterisation in\n> [04 §2](04-process-capability.html).\n\n**Evaluation of the surface roughness and dimensional accuracy of low-cost 3D-printed parts\nmade of PLA–aluminum** (2024). PMC10878859. **[open]**\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## Standards\n\nFull treatment in [03 — Standards](03-standards.html). The essential list:\n\n| Standard | Title | Access |\n|---|---|---|\n| ISO 8015:2011 | GPS — Fundamentals: concepts, principles and rules | [buy] |\n| ISO 286-1/-2:2010 | ISO code system for tolerances on linear sizes | [buy] |\n| ISO 1101:2017 | Geometrical tolerancing — form, orientation, location, run-out | [buy] |\n| ISO 2768-1:1989 | General tolerances — linear and angular dimensions | [buy] |\n| ISO 22081:2021 | General geometrical and size specifications (replaces ISO 2768-2) | [free preview](https://cdn.standards.iteh.ai/samples/72514/78d2a06f1b7a42ddb87e7180c790cc9c/ISO-22081-2021.pdf) |\n| ISO 14253-1:2017 | Decision rules for verifying conformity under measurement uncertainty | [buy] |\n| ISO 22514-4 | Process capability estimates | [buy] |\n| **ISO/ASTM 52902:2023** | **AM — Test artefacts — geometric capability assessment** | [buy] |\n| ISO/ASTM 52900:2021 | AM — fundamentals and vocabulary | [buy] |\n| ISO/ASTM 52903-2:2020 | Material extrusion of plastics — process equipment | [buy] |\n| ASME Y14.5-2018 | Dimensioning and Tolerancing | [buy] |\n| ASME Y14.5.1-2019 | Mathematical definition of Y14.5 principles | [buy] |\n| IPC-2615 | Printed Board Dimensions and Tolerances | [buy] |\n| IPC-2221 | Generic standard on printed board design | [buy] |\n\n**The ISO Online Browsing Platform** ([iso.org/obp](https://www.iso.org/obp)) publishes the\n*Terms and definitions* clauses of most ISO standards free of charge. Enough to settle a\nvocabulary question without buying the document.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## Software\n\n| Project | Language | License | Status | Notes |\n|---|---|---|---|---|\n| [stackcore](https://pypi.org/project/stackcore/) | Python | MIT | v0.3.3, Jul 2025, one maintainer | Plane/point-based stacks, Monte Carlo, numba-parallel. Best-maintained option |\n| [tol-stack](https://github.com/slightlynybbled/tol-stack) | Python | — | unmaintained, ~13 stars | Simple 1D and true-position; supports skew-normal, which matters for FDM. Worth reading |\n| [tolstack](https://github.com/aevyrie/tolstack) | Rust | — | archived-ish | 1D visual editor, MC and RSS. Standalone GUI |\n| [Grohmann & Walter](https://github.com/EinmalmitProfis/Statistical-Tolerance-Analysis-and-Synthesis-with-Python) | Python | — | paper companion | Analysis *and* synthesis, CuPy GPU support. The most rigorous |\n| [kiutils](https://kiutils.readthedocs.io/) | Python | MIT | active | Pure-Python KiCad file parsing; no KiCad install needed |\n\nCommercial, for reference: RD8 (cloud, 14-day trial, no public pricing), CETOL 6σ (Sigmetrix),\n3DCS (DCS), VisVSA (Siemens), Ansys VRXPERIENCE / Tolerance Analysis.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## Related, occasionally useful\n\n**Creveling, C.M. (1997).** *Tolerance Design: A Handbook for Developing Optimal\nSpecifications.* Addison-Wesley. **[buy]** — the Taguchi-influenced treatment of tolerance\ndesign and quality loss.\n\n**Bjørke, Ø. (1989).** *Computer-Aided Tolerancing*, 2nd ed. ASME Press. **[buy]** — an early\nsystematic treatment, cited throughout Scholz.\n\n**Henzold, G. (2020).** *Geometrical Dimensioning and Tolerancing for Design, Manufacturing\nand Inspection*, 3rd ed. Butterworth-Heinemann. **[buy]** — the best single reference for\n**ISO** GD&T specifically, as opposed to ASME. If you work to ISO, this is the book that\nFischer is for ASME.\n",
+      "metadata": {}
+    }
+  ]
+}

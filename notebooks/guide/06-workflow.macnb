@@ -1,0 +1,74 @@
+{
+  "nbformat": 4,
+  "nbformat_minor": 5,
+  "metadata": {
+    "kernelspec": {
+      "name": "maxima",
+      "display_name": "Maxima",
+      "language": "maxima"
+    },
+    "aximar": {}
+  },
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "source": "# 06 — The Workflow\n\nThe procedure to follow, phase by phase. Each phase states its inputs, actions, outputs, and\n**where I can help** — marked 🤖 — so you can hand off the parts that are mechanical and keep\nthe parts that need your judgement.\n\nTwo things run on very different clocks, so start them together:\n\n- **Phase 2 (characterisation)** costs days of wall-clock printing time and almost no\n  attention.\n- **Phases 1, 3–5** cost attention and almost no wall-clock time.\n\nStart the printer on day one. Do the thinking while it runs.\n\n---\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## Phase 0 — Set up the repository\n\n**Output:** the layout in [05 §5](05-parameter-model.html), under version control.\n\n- `git init`, and commit these documents.\n- Create `params/`, `profiles/`, `cad/`, `pcb/`, `tools/`, `reports/`.\n- Export your current slicer profile into `profiles/` and commit it. Do this *before* you\n  change anything, so you have a baseline.\n\n🤖 *I can scaffold the directory structure, the `.gitignore` (FreeCAD and KiCad both generate\na lot of noise), and a `Makefile`/`justfile` for the common commands.*\n\n---\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## Phase 1 — Write down the requirements before you model anything\n\nThis is the phase people skip, and skipping it is why tolerance analysis usually happens too\nlate to change anything.\n\n**Input:** your idea of the assembly.\n**Output:** a list of functional requirements, each expressed as a condition on a gap.\n\nFor each way the assembly could fail to work, write one line:\n\n> \"The lid must close without bowing the PCB\" → `cavity − boss − pcb − rib ≥ 0`\n>\n> \"The USB-C plug must enter the aperture\" → `|aperture_centre − connector_centre| ≤ 0.35`\n>\n> \"The board must not rattle\" → `cavity − boss − pcb − rib ≤ 1.0`\n\nRules that make this phase pay off:\n\n- **Express every requirement as an inequality on a computable quantity.** \"The lid should fit\n  nicely\" is not a requirement. If you cannot write it as an inequality, you do not yet know\n  what you want.\n- **Both bounds, where both exist.** Most clearances have a maximum as well as a minimum, and\n  the maximum is the one people forget until the thing rattles.\n- **Mark the key characteristics** ([01 §8](01-concepts.html)). Expect five to ten. If you have\n  thirty, you have not thought hard enough about which ones matter.\n- **Note what is adjustable.** A requirement you can satisfy with a shim, a screw adjustment,\n  or a bit of foam is a different kind of problem from one fixed at print time. Record it.\n\n🤖 *Give me a description or sketch of the assembly and I'll draft the requirement list and\nthe candidate chains for you to correct. Getting the loop closure and signs right is exactly\nthe sort of thing worth a second pair of eyes.*\n\n---\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## Phase 2 — Characterise the process (start this on day one)\n\n**Input:** a printer and some filament.\n**Output:** a capability table, per [04 §8](04-process-capability.html).\n\nFollow [04 — Process capability](04-process-capability.html) in full. In brief:\n\n1. Model the six coupons (A–F).\n2. Print them across three sessions, recording configuration exactly.\n3. Measure, with a repeatability study first (§6) so you know what your measurements are\n   worth.\n4. Regress error on nominal to separate offset from scale (§7).\n5. Decide and apply compensation, in one place (§9).\n6. Re-measure to confirm.\n\nIf you do nothing else in this phase, do **coupon C (the fit ladder)**. It answers the single\nmost common practical question — what clearance do I need — with no measurement and no\nstatistics.\n\n🤖 *I can generate the coupon geometry as FreeCAD macros or OpenSCAD/STL, write the\nmeasurement log template, and do the regression and distribution fitting once you have\nnumbers. Send me a CSV of measurements and I'll return the capability table.*\n\n---\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## Phase 3 — Build the parameter file\n\n**Input:** Phase 1 requirements, Phase 2 capability (or placeholders).\n**Output:** `params/parameters.yaml`.\n\n- Enter every dimension that appears in any chain, plus every dimension you expect to tune.\n- Fill in `source:` honestly on every one. Use `assumed` freely at this stage — the point is\n  that it is *visible*.\n- Define correlation groups for features that share a cause.\n- Define the stacks from Phase 1.\n\nDo not wait for Phase 2 to finish. Populate with `assumed` values now, and let the\ncharacterisation results replace them. The diff when that happens is instructive.\n\n🤖 *I can write the initial parameter file from your requirement list, and write the loader\nand validator (see the security note in [05 §4](05-parameter-model.html) — expression\nevaluation must not use `eval()`).*\n\n---\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## Phase 4 — Wire CAD and PCB to the parameter file\n\n**Input:** `parameters.yaml`.\n**Output:** a FreeCAD model and a KiCad board that cannot silently disagree with it.\n\nSee [07 — FreeCAD](07-freecad.html) and [08 — KiCad and PCB](08-kicad-pcb.html).\n\nThe test of success: change one number in the YAML, run one command, and both the model and\nthe board update. Until that works, you do not have a single source of truth — you have a\ndocument that describes one.\n\n🤖 *This is the most script-heavy phase and the one I'm most useful for: the YAML→FreeCAD\nspreadsheet sync, the KiCad geometry extraction, and the consistency checker that fails if\nCAD and YAML have drifted.*\n\n---\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## Phase 5 — Analyse\n\n**Input:** parameters and stacks.\n**Output:** a report in `reports/`, committed.\n\nFor each stack, compute and report **all** of:\n\n- worst case — the guaranteed bound\n- RSS — the optimistic bound\n- Monte Carlo with your actual distributions, offsets and correlations — the estimate\n- the **contribution ranking** ([02 §7](02-methods.html))\n- which inputs were `assumed` rather than measured\n\nReport all four methods every time, even when only one drives the decision. Their divergence\nis diagnostic: if Monte Carlo lands outside the worst-case bounds you have a bug; if it sits\nalmost exactly on RSS you have probably forgotten your correlations.\n\n**Sensitivity to your guesses.** Re-run with `share: 0`, `0.5`, `1.0` on the correlation\ngroups, and with `assumed` tolerances at half and double. If the decision does not change, you\ncan stop worrying about those inputs — which is a much stronger result than a single precise\nnumber.\n\n🤖 *I can write the analysis tool — worst case, RSS, Monte Carlo with correlation groups,\ncontribution ranking, and a markdown/HTML report generator. The maths is settled in\n[02](02-methods.html) and verified symbolically in the\n[Maxima notebook](tolerance-mathematics.html); the code is straightforward.*\n\n---\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## Phase 6 — Decide\n\n**Input:** the report. **Output:** a decision, recorded.\n\nIf every stack passes with margin, build it.\n\nIf one does not, you have five options, in the order you should consider them:\n\n1. **Change the design so the stack does not exist.** The best tolerance analysis is one you\n   deleted. See below.\n2. **Change the nominal.** Very often the gap is simply too small and there is no reason for\n   it. Free.\n3. **Reduce the top contributor's variation.** Print that feature in a different orientation,\n   in a different material, or make it the one machined/reamed feature. Only ever attack the\n   top one or two — the ranking is squared, so the rest do not matter.\n4. **Accept the failure rate.** For a one-off with a 2% chance of needing a file, this is\n   correct and you should not feel bad about it. Record the decision.\n5. **Add adjustment.** A shim, a slot instead of a hole, a set screw. Converts a tolerance\n   problem into an assembly step.\n\nRecord which you chose and why, in the commit message. Six months on, the reasoning is the\npart you will have lost.\n\n### Design moves that beat tolerance analysis\n\nWorth their own section, because for 3D printing these are usually the *right* answer, and\nthey are what a tolerance-analysis tool will never suggest:\n\n- **Compliance.** A snap arm, a spring finger, a foam pad, an O-ring. Absorbs the entire stack\n  and turns a ±0.5 mm problem into a non-problem. The most powerful move available.\n- **Lead-ins and chamfers.** A 45° chamfer on a hole entry converts a positional error into a\n  guided insertion. Costs nothing, works every time.\n- **Kinematic (exact) constraint.** Constrain each degree of freedom exactly once. Three\n  points define a plane; four points define a rocking part. Over-constraint is what turns\n  small errors into large stresses.\n- **Self-alignment.** Cones, vees, tapered pins, magnets. Let the parts find their own\n  position rather than specifying it.\n- **Slots instead of holes.** A slotted mounting hole removes one direction from the chain\n  entirely.\n- **Deliberate slop plus a datum.** Locate on *one* feature precisely and let everything else\n  float. Trying to locate on two features precisely is how you get an over-constrained\n  assembly that never fits.\n- **Print it as one part.** Every joint you remove removes a whole chain. Printing is the one\n  process where part-count reduction is nearly free.\n- **Move the precision to a bought part.** A printed bearing pocket holding a steel bearing\n  needs one accurate diameter; a printed bearing needs everything accurate.\n\n🤖 *Given a failing stack and the contribution ranking, I can propose specific design changes\nand re-run the analysis for each so you can compare them numerically.*\n\n---\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## Phase 7 — Verify on real parts\n\n**Input:** the first physical assembly. **Output:** confirmation, or a corrected model.\n\n- Measure the actual gaps on the first article and compare to the predicted distribution.\n- One sample cannot validate a distribution, but it *can* falsify one: if the measured gap\n  falls outside the predicted worst-case range, your chain is wrong. That is a real and\n  common finding, and it is worth going back for.\n- Feed the measurement back into the parameter file as evidence.\n\n🤖 *I can write the first-article check: predicted vs. measured, with the percentile the\nobservation landed at.*\n\n---\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## Phase 8 — Maintain\n\nThe system pays for itself here.\n\n- Re-run the analysis on every design change. Because the reports are committed, the diff\n  shows you the effect immediately.\n- Re-characterise on the triggers in [04 §10](04-process-capability.html).\n- Move `assumed` values to `measured` opportunistically — every time you measure anything, put\n  it in the file.\n\n🤖 *I can set up a pre-commit hook or CI check that re-runs the analysis and fails if any key\ncharacteristic's failure rate has regressed past its threshold.*\n\n---\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## Suggested order of work\n\n| Week | Do |\n|---|---|\n| 1 | Phase 0. Phase 1 requirements. Start Phase 2 printing — coupons C and F first |\n| 1–2 | Phase 3 with `assumed` values. Measure coupons |\n| 2 | Phase 2 analysis and compensation. Re-print, re-measure |\n| 2–3 | Phase 4 wiring. Phase 5 first real analysis |\n| 3 | Phase 6 decisions, iterate |\n| 4 | Phase 7 first article |\n\nThe first project takes about a month of evenings. Subsequent projects reuse the capability\ndata and the tooling, and take a day.\n\n---\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## What to build, in order\n\nIf you want the tooling built, this is the dependency order:\n\n1. **Parameter file loader + validator.** Everything depends on it. Safe expression\n   evaluation, reference checking, clear errors.\n2. **Analysis engine.** Worst case, RSS, Monte Carlo with correlation groups, contribution\n   ranking.\n3. **Report generator.** Markdown to `reports/`, committed.\n4. **Coupon generator.** Parametric coupons A–F.\n5. **Capability fitter.** Measurement CSV → regression → capability table entry.\n6. **FreeCAD sync.** YAML → spreadsheet aliases.\n7. **KiCad extractor.** Board geometry → parameters, and the consistency check.\n8. **CI check.** Regression gate on key characteristics.\n\nItems 1–3 are the minimum viable system and are perhaps 400 lines of Python. Item 5 is where\nthe real value is unlocked. Items 6–8 are conveniences that matter once the project is alive.\n",
+      "metadata": {}
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+name: Deploy to GitHub Pages
+
+# Unlike maxima-demos/journeys — which render locally and commit docs/pages —
+# this workflow does the rendering itself, so the site always matches the
+# notebooks in the repository and no generated HTML is committed.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'notebooks/**'
+      - 'tools/**'
+      - 'build.sh'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  AXIMAR_TOOLS_TAG: tools-v0.4.1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # gnuplot is what Maxima's plot2d shells out to for SVG output.
+      - name: Install Maxima
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends maxima gnuplot
+
+      - name: Install aximar-mcp
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          dest="$RUNNER_TEMP/aximar"
+          mkdir -p "$dest"
+          gh release download "$AXIMAR_TOOLS_TAG" -R cmsd2/aximar \
+             -p 'aximar-tools-x86_64-unknown-linux-gnu.tar.gz' -D "$dest"
+          tar xzf "$dest"/aximar-tools-*.tar.gz -C "$dest"
+          chmod +x "$dest/aximar-mcp"
+          echo "$dest" >> "$GITHUB_PATH"
+
+      - uses: astral-sh/setup-uv@v5
+
+      # maxima-nbconvert is not on PyPI; install it from git.
+      - name: Install nbconvert exporters
+        run: |
+          uv venv
+          uv pip install "maxima-nbconvert[plotly] @ git+https://github.com/cmsd2/maxima-nbconvert"
+
+      - name: Build site
+        run: ./build.sh
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/pages
+
+  deploy:
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

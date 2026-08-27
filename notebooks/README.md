@@ -1,6 +1,13 @@
 # Notebooks
 
-## `tolerance-mathematics.macnb`
+Every document in this project is a Maxima notebook. `build.sh` executes them all and exports
+to `docs/pages/`; `.github/workflows/pages.yml` does the same in CI and publishes to GitHub
+Pages.
+
+- `guide/` — the eleven documentation notebooks, numbered in reading order.
+- `mathematics/` — symbolic derivations.
+
+## `mathematics/tolerance-mathematics.macnb`
 
 Maxima notebook deriving the formulas used in [`docs/02-methods.md`](../docs/02-methods.md).
 Saved in Jupyter `.ipynb` format, so it opens in Jupyter, VS Code, or any `.ipynb` tool, and
@@ -24,7 +31,7 @@ and the four ways it fails. You do not need to have read Scholz first.
 
 ### Why it exists
 
-Two reasons.
+Three reasons.
 
 **The inflation factors should not be magic numbers.** Scholz's table circulates as a list of
 decimals — 1.732, 1.225, 1.369 — with no visible origin, and gets copied between documents
@@ -32,9 +39,13 @@ until nobody knows what they mean. They are all just `3σ/T` for a given density
 each one and checks it. Once you have seen that, you can derive a factor for a distribution
 that is not in the table, which is what you will actually need for a real printer.
 
-**The prose and the arithmetic must not drift.** §6 recomputes every number quoted in
-`docs/02` §10. If someone edits a tolerance in the prose without re-deriving, the notebook and
-the document disagree and the discrepancy is visible.
+**The prose and the arithmetic must not drift.** §6 recomputes the worked example from
+`guide/02-methods` §10 independently. Both are now computed rather than typed, so two agreeing
+results are a genuine cross-check.
+
+**It proved its worth immediately.** Converting the guide's worked examples from typed tables
+to live cells surfaced an arithmetic error in the original hand-written prose — a retolerancing
+figure quoted as 0.368 mm / 0.00056 that is actually 0.358 mm / 0.0004.
 
 ### Running it
 

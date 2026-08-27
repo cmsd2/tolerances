@@ -1,0 +1,247 @@
+{
+  "nbformat": 4,
+  "nbformat_minor": 5,
+  "metadata": {
+    "kernelspec": {
+      "name": "maxima",
+      "display_name": "Maxima",
+      "language": "maxima"
+    },
+    "aximar": {}
+  },
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "source": "# 02 — Methods: The Mathematics\n\nNotation follows Scholz (1995), *Tolerance Stack Analysis Methods*, Boeing ISSTECH-95-030,\nwhich is freely available and is the reference to reach for when this document is not enough.\n\n> Every formula and every number below is derived symbolically and checked in\n> [`notebooks/tolerance-mathematics.macnb`](tolerance-mathematics.html). If you\n> would rather see where the constants come from than take them on trust, start there — its\n> §0 is a self-contained primer that assumes no prior reading.\n\n---\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 1. Notation\n\n| Symbol | Meaning |\n|---|---|\n| Lᵢ | actual value of the i-th part dimension |\n| λᵢ | nominal value of the i-th part dimension |\n| μᵢ | actual process mean for the i-th dimension |\n| Δᵢ | mean shift, Δᵢ = μᵢ − λᵢ |\n| σᵢ | standard deviation of the i-th dimension |\n| Tᵢ | tolerance (half-width) of the i-th dimension |\n| G | assembly criterion (the gap of interest) |\n| γ | nominal value of G |\n| aᵢ | sensitivity coefficient of G to Lᵢ |\n| T_assy | resulting assembly tolerance |\n| cᵢ | distributional inflation factor |\n| ηᵢ | mean shift as a fraction of tolerance, ηᵢ = \\|Δᵢ\\|/Tᵢ |\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 2. Linearising the chain\n\nIn general G = f(L₁, …, Lₙ). Expand about nominal:\n\n    G ≈ a₀ + a₁L₁ + a₂L₂ + … + aₙLₙ\n\n    aᵢ = ∂f/∂Lᵢ  evaluated at nominal\n\nFor a pure length stack — the common case — every aᵢ is +1 or −1, according to whether the\ndimension adds to or subtracts from the gap. The general form matters when the chain involves\nangles, projections, or trigonometric relationships; there, compute aᵢ by differentiation or\nnumerically:\n\n    aᵢ ≈ [f(λ₁, …, λᵢ + h, …, λₙ) − f(λ₁, …, λᵢ − h, …, λₙ)] / 2h\n\nNumerical differentiation is the pragmatic choice: it works on any function you can evaluate,\nincluding one that calls into CAD.\n\n**If the geometry is strongly non-linear over the tolerance range, do not linearise. Go\nstraight to Monte Carlo (§5).** Linearisation is an approximation that silently degrades; it\ndoes not warn you.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 3. Worst case (arithmetic)\n\n    T_assy^arith = |a₁|T₁ + |a₂|T₂ + … + |aₙ|Tₙ\n\n    G ∈ [γ − T_assy^arith, γ + T_assy^arith]     with absolute certainty\n\n**Assumptions:** each Lᵢ lies within λᵢ ± Tᵢ. That is all. No distributional assumption\nwhatsoever, which is why it is the only method that gives a guarantee.\n\n**Use when:** chains of two or three terms; safety-critical gaps; one-off builds where rework\nis unacceptable; or when you have good reason to believe the dimensions are correlated (§6),\nbecause correlated same-sign terms approach worst-case behaviour anyway.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 4. Statistical (RSS)\n\n    T_assy^stat = √(a₁²T₁² + a₂²T₂² + … + aₙ²Tₙ²)\n\nand when all aᵢ = ±1 this reduces to the familiar √(T₁² + … + Tₙ²).\n\nThe geometric intuition Scholz offers: for three terms, worst-case is walking the three edges\nof a box (T₁ + T₂ + T₃) while RSS is the diagonal (√(T₁²+T₂²+T₃²)). The diagonal is always\nshorter, and increasingly so as terms are added.\n\n**Assumptions — all four must hold, and they are load-bearing:**\n\n1. **Independence** of the Lᵢ.\n2. **Tᵢ = 3σᵢ** — the stated tolerance really is the ±3σ spread.\n3. **Normality** of each Lᵢ.\n4. **Centred** — μᵢ = λᵢ, the process sits on nominal.\n\n**Interpretation:** γ ± T_assy^stat contains 99.73% of assemblies. Note the precision is\nillusory in one direction: the 3 in 3σ is a round number and 0.9973 is what falls out of it,\nnot the other way round. You cannot have both round.\n\n### Why RSS comes out optimistic in practice\n\nAssembly variation observed in the field is routinely wider than RSS predicts. Each of the\nfour assumptions is a suspect, and each has a repair.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 5. Repairs to RSS\n\n### 5.1 Bender's inflation factor\n\n    T_assy^stat(Bender) = 1.5 × √(a₁²T₁² + … + aₙ²Tₙ²)\n\nThe rationale matters, because the folklore version is wrong. Scholz's account: process\nowners asked what tolerance they can hold often answer with a ±Tᵢ that actually corresponds\nto their ±2σ range, not ±3σ — values outside ±2σ are rarely seen and get rationalised away.\nSince ±2σ covers ~95%, correcting a 2σ-meaning-T to a 3σ-meaning-T requires a factor of 1.5.\nBender called this \"benderising\".\n\nSo the 1.5 is **a fix for a communication failure about what T means**, not a universal\nphysical correction. Scholz is blunt that *\"the rationale for the inflation factor is not\naltogether satisfactory, since it is based on ignorance and suppositions about meanings of\nTᵢ.\"* If you measured your own process and know what your Tᵢ means, you do not need it.\n\nNote also that for n = 2, 1.5 × RSS is *more conservative than worst-case*. Which tells you\nit is a blunt instrument.\n\n*(Attribution: Scholz cites Bender (1962); the widely cited publication is Bender, A., \"Statistical\nTolerancing as it Relates to Quality Control and the Designer\", SAE paper 680490, 1968.)*\n\n### 5.2 Distributional inflation factors\n\nIf a dimension is not normally distributed, inflate its contribution by a factor cᵢ:\n\n    T_assy^stat(c) = √((c₁a₁T₁)² + (c₂a₂T₂)² + … + (cₙaₙTₙ)²)\n\nValues from Scholz, Figure 6 — these are the numbers to use when you know the shape:\n\n| Distribution over the tolerance interval | c |\n|---|---|\n| Normal (T = 3σ) | 1.000 |\n| Beta, α = β = 3 | 1.134 |\n| Triangular | 1.225 |\n| Half cosine wave | 1.306 |\n| Beta, α = β = 2 (parabolic) | 1.342 |\n| Trapezoidal, k = 0.5 | 1.369 |\n| Elliptical (semicircular) | 1.500 |\n| DIN histogram, p = 0.7, g = 0.4 | 1.512 |\n| **Uniform** | **1.732** |\n| Beta, α = β = 0.6 (bimodal) | 2.023 |\n| Student t (df = 4 or 10), scaled so T = 3σ | 1.000 |\n\nThe uniform value 1.732 = √3 is the one to remember: uniform is the most-spread symmetric\nunimodal distribution over a fixed interval, and it inflates the contribution by 73%. A\ntool-wear process, or a printer whose parameter drifts monotonically across a build, produces\nsomething close to uniform.\n\nScholz's caveat is worth repeating: apply cᵢ where you have a **validated** reason to think\nthe distribution differs, leaving the rest at 1. Using them as blanket protection factors is\nfine too — but then admit that is what you are doing rather than pretending to model a shape.\n\n### 5.3 Mean shifts\n\nIf processes are not centred, the general model (Greenwood & Chase, 1987) stacks the mean\nshifts arithmetically and the residual random variation statistically:\n\n    ηᵢ = |Δᵢ| / Tᵢ                  (shift as a fraction of tolerance)\n\n    T_assy^Δ(η) = Σ ηᵢ|aᵢ|Tᵢ  +  √( Σ [(1 − ηᵢ)aᵢTᵢ]² )\n\nAt η = 0 this collapses to RSS; at η = 1 it collapses to worst-case. Worst-case and RSS are\nthe two endpoints of one family, which is the sense in which Greenwood and Chase \"unify\"\nmatters.\n\n**This is the single most important formula for FDM work**, because FDM mean shifts are large,\nsystematic, and knowable. If you measure that your holes come out 0.15 mm undersize with a\n0.05 mm spread, you have Δ = −0.15 and σ = 0.05 — do not average that into a symmetric ±0.2.\n\nBut note: if you have *measured* the shift, the better move is to **put it in the nominal**.\nCorrect the model or the slicer, re-measure to confirm, and then work with a genuinely\ncentred, smaller tolerance. Mean-shift models are for variation you know exists but cannot\nremove — e.g. spool-to-spool differences you will not re-characterise each time.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 6. Correlation — the one that bites 3D printing\n\nRSS assumes independence. When it does not hold, use the full variance:\n\n    Var(G) = Σᵢ aᵢ²σᵢ²  +  2 Σᵢ<ⱼ aᵢaⱼ Cov(Lᵢ, Lⱼ)\n\n    Cov(Lᵢ, Lⱼ) = ρᵢⱼ σᵢ σⱼ\n\nThe sign of the cross term is `aᵢaⱼρᵢⱼ`. So, for positively correlated dimensions:\n\n- **same sign in the chain (aᵢaⱼ > 0) → variance increases.** Correlation hurts.\n- **opposite sign (aᵢaⱼ < 0) → variance decreases.** Correlation helps; the common-mode error\n  partially cancels.\n\nRSS gets *both* cases wrong. It is not universally optimistic — it is simply blind.\n\n**When to expect correlation in this workflow:**\n\n- Multiple features on the same printed part (share first-layer squish, flow calibration,\n  thermal history, Z-step error).\n- Different parts printed in the same session on the same machine with the same spool.\n- A shared datum feature — if two dimensions are both measured from a face that is itself\n  displaced, they move together.\n- Thermal expansion across an assembly.\n- Multiple pads on the same PCB (share etch compensation and layer registration).\n\n**How to handle it:** define correlation groups in the parameter file\n([05](05-parameter-model.html)) and sample the common component once per virtual assembly in\nMonte Carlo. That is far easier than assembling a covariance matrix, and it is exactly what\nthe physical situation is: one shared cause, several affected dimensions.\n\n    L_i = λ_i + Δ_i + s_i · z_common + ε_i        z_common ~ N(0,1) drawn once per assembly\n                                                   ε_i ~ independent residual\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 7. Sensitivity and contribution ranking\n\nFor an RSS stack, each term's share of the total variance is\n\n    contribution_i = (aᵢTᵢ)² / Σⱼ (aⱼTⱼ)²\n\nThis is the most actionable output of the whole exercise. Because it is a *squared* measure,\nit concentrates hard: a term with twice the tolerance of another contributes four times the\nvariance. In practice, two or three terms usually account for 70–90% of a stack, and the rest\nare noise. Tighten the top contributor or nothing.\n\nFor Monte Carlo with correlations or non-linearity, compute contributions by\nvariance-decomposition instead: re-run with input *i* frozen at its mean and observe the drop\nin Var(G).\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 8. Monte Carlo\n\nThe default method. Algorithm:\n\n```\nfor k in 1..N:\n    for each correlation group g:\n        z_g ← sample N(0,1)                    # shared cause, once per assembly\n    for each dimension i:\n        L_i ← λ_i + Δ_i + s_i·z_g(i) + sample(dist_i)\n    G_k ← f(L_1, …, L_n)                       # the real function, not the linearisation\nreport: mean(G), sd(G), percentiles, P(G < 0), histogram\n```\n\n**Sample size.** The standard error of an estimated failure probability p is √(p(1−p)/N). To\nresolve p ≈ 0.001 to within a relative 10%, you need N ≈ 10⁵. For the decisions you are\nmaking, N = 10⁵ is plenty and runs in well under a second in NumPy; N = 10⁶ if you are\nchasing a tail. Do not report more significant figures than √(p/N) supports.\n\n**Choosing input distributions.** For this workflow:\n\n| Input | Sensible default |\n|---|---|\n| FDM dimension, characterised | Normal with measured (Δ, σ); or the empirical sample itself |\n| FDM dimension, uncharacterised | Uniform over your believed range — honest about ignorance, and conservative |\n| Bought part with a datasheet ± | Uniform, unless the datasheet states a distribution. A supplier's ± is a spec limit, not a 3σ |\n| PCB thickness | Normal, ±10% as roughly 3σ (fab houses do control this) |\n| Screw/fastener dimensions | Uniform over the ISO tolerance class |\n| Anything you guessed | Uniform, and flag it in the parameter file |\n\nThe instinct to reach for the normal distribution everywhere is wrong. A supplier's stated\ntolerance is a *limit* they undertake not to exceed; assuming it is 3σ of a normal is an\nassumption you have not earned. Uniform is the defensible default for spec-limit inputs.\n\n**Reading a Monte Carlo result honestly.** If the empirical distribution of G is visibly\nnon-normal — skewed, or with a shoulder — say so, and report percentiles rather than mean ±\n3σ. The whole reason to run Monte Carlo is that you did not have to assume normality; do not\nthrow that away in the reporting.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 9. Acceptance criteria\n\nDecide *before* you compute what result would be acceptable. Options, roughly in order of\nincreasing sophistication:\n\n- **Worst-case passes** (G_min ≥ 0). The strongest statement. Aim for this on anything\n  safety-relevant or unreworkable.\n- **P(G < 0) below a threshold.** For a one-off, 1% is fine. For twenty units, you want ~0.1%\n  or you will be filing parts. Express it as \"1 in N assemblies will need rework\" — it makes\n  the decision concrete.\n- **Cpk of the gap** ≥ 1.33 against its requirement limits. Useful if you want a single number\n  comparable across chains.\n- **Margin ratio** γ / T_assy. Quick to eyeball; > 1 means RSS passes at 3σ.\n\nAlso decide what happens when a criterion fails — that is [06 §6](06-workflow.html).\n\n---\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 10. Worked example: PCB retained between an enclosure boss and a lid rib\n\nA printed enclosure, a PCB resting on printed bosses, and a printed lid whose ribs bear on\nthe top of the board. The functional gap $G$ is the residual clearance; $G < 0$ means the lid\nwill not close (or will bow the board), $G > 1$ mm means the board rattles.\n\n| $i$ | Dimension | $a_i$ | $\\lambda_i$ (mm) | $T_i$ (mm) | Source |\n|---|---|---|---|---|---|\n| 1 | Enclosure internal height, floor to lid seat | $+1$ | 10.00 | 0.30 | printed, Z |\n| 2 | Boss height above floor | $-1$ | 5.00 | 0.20 | printed, Z |\n| 3 | PCB thickness | $-1$ | 1.60 | 0.16 | fab, ±10% |\n| 4 | Lid rib height | $-1$ | 3.00 | 0.20 | printed, Z |\n\nEverything below is computed, not transcribed. The chain is defined once in the next cell and\nevery figure in this section derives from it.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": "/* The chain — the only place these numbers are written down. */\nλs    : [10.00, 5.00, 1.60, 3.00]$          /* nominals            */\nas    : [   +1,   -1,   -1,   -1]$          /* sign in the chain   */\nTs    : [ 0.30, 0.20, 0.16, 0.20]$          /* tolerance half-width */\nnames : [\"enclosure height\", \"boss height\", \"PCB thickness\", \"lid rib height\"]$\n\n/* Standard normal CDF, for turning a z-score into a failure probability. */\nΦ(z) := float( (1 + erf(z/sqrt(2)))/2 )$\n\naT : map(\"*\", map(abs, as), Ts)$            /* |a_i| T_i */\nγ  : apply(\"+\", map(\"*\", as, λs));          /* nominal gap */\n",
+      "metadata": {},
+      "execution_count": 8,
+      "outputs": [
+        {
+          "data": {
+            "text/latex": [
+              "0.3999999999999999"
+            ]
+          },
+          "execution_count": 8,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": "### Worst case\n\nAssume every dimension sits simultaneously at its least favourable limit.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": "T_wc : apply(\"+\", aT);\n[γ - T_wc, γ + T_wc];      /* the guaranteed range of G */\n",
+      "metadata": {},
+      "execution_count": 9,
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "0.8600000000000001"
+          ]
+        },
+        {
+          "data": {
+            "text/latex": [
+              "\\left[ -0.4600000000000002 , 1.26 \\right] "
+            ]
+          },
+          "execution_count": 9,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": "**Fails** — worst-case interference of 0.46 mm. If this were a one-off safety part, stop here\nand redesign.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "### RSS\n\nTreat the four dimensions as independent and combine in quadrature.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": "T_rss  : float( sqrt( apply(\"+\", map(lambda([u], u^2), aT)) ) );\nσ_G    : T_rss/3$\nP_fail : Φ(-γ/σ_G);\nprint(\"about 1 assembly in\", round(1/P_fail), \"fails\")$\n",
+      "metadata": {},
+      "execution_count": 10,
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "0.4422668877499196\n0.0033309007877438956\nabout 1 assembly in 300 fails"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": "For a hobby build, acceptable. Across twenty units you would almost certainly never see a\nfailure.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "### Contribution ranking\n\n**This is the deliverable**; the failure probability is only context for it. Because the\nmeasure is squared it concentrates hard — a term with twice the tolerance of another\ncontributes four times the variance.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": "tot : apply(\"+\", map(lambda([u], u^2), aT))$\nfor i thru length(aT) do\n    print( names[i], \":\", float(100*aT[i]^2/tot), \"percent of variance\" )$\n\n/* What halving the top contributor would buy, versus halving the smallest. */\nretol(newT) := block([v : sqrt(apply(\"+\", map(lambda([u], u^2), newT)))],\n                     [float(v), Φ(-γ/(float(v)/3))])$\nprint(\"halve enclosure height:\", retol([0.15, 0.20, 0.16, 0.20]))$\nprint(\"halve PCB thickness   :\", retol([0.30, 0.20, 0.08, 0.20]))$\n",
+      "metadata": {},
+      "execution_count": 11,
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "enclosure height : 46.0122699386503 percent of variance\nboss height : 20.449897750511248 percent of variance\nPCB thickness : 13.087934560327197 percent of variance\nlid rib height : 20.449897750511248 percent of variance\nhalve enclosure height: [0.3579106033634656,4.0000324164757295e-4]\nhalve PCB thickness   : [0.42,0.002137366980086264]"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": "The enclosure height carries 46% of the variance. Halving it drops the failure rate about\neight-fold; halving the PCB tolerance instead barely moves it. Attack the top one or two terms\nor nothing.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "### Bender inflation\n\nThe correction applied when a quoted $T$ is really a $2\\sigma$ figure rather than the\n$3\\sigma$ that RSS assumes (see §5.1).\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": "T_bender : 1.5 * T_rss;\nP_bender : Φ(-γ/(T_bender/3));\nprint(\"about 1 assembly in\", round(1/P_bender), \"fails\")$\n",
+      "metadata": {},
+      "execution_count": 12,
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "0.6634003316248794\n0.03523618170963694\nabout 1 assembly in 28 fails"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": "Now marginal. The whole difference between \"fine\" and \"you will hit this\" is whether those\nprinted tolerances were 3σ or 2σ figures — which is a question about your measurement\nprocess, not your design.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "### Correlation\n\nDimensions 1, 2 and 4 are all printed Z-heights sharing a common bias. RSS assumed they were\nindependent; they are not. The full variance is\n\n$$Var(G) = \\sum_i a_i^2 \\sigma_i^2 + 2 \\sum_{i<j} a_i a_j \\rho_{ij} \\sigma_i \\sigma_j$$\n\nand the sign of each cross term is the sign of $a_i a_j$.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": "varG(avec, Tvec, corr) := block([m : length(avec), σv, s],\n    σv : map(lambda([t], t/3), Tvec),\n    s  : 0,\n    for i thru m do\n      for j thru m do\n        s : s + avec[i]*avec[j]*corr(i,j)*σv[i]*σv[j],\n    float(s))$\n\nindep(i,j) := if i = j then 1 else 0$\n\n/* CASE A — this chain. Printed Z dims are 1, 2, 4; the PCB (3) is independent. */\ncaseA(i,j) := if i = j then 1 elseif i = 3 or j = 3 then 0 else 0.6$\n\nprint(\"independent : σ_G =\", float(sqrt(varG(as, Ts, indep))),\n      \" P(G<0) =\", Φ(-γ/sqrt(varG(as, Ts, indep))))$\nprint(\"correlated  : σ_G =\", float(sqrt(varG(as, Ts, caseA))),\n      \" P(G<0) =\", Φ(-γ/sqrt(varG(as, Ts, caseA))))$\n",
+      "metadata": {},
+      "execution_count": 13,
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "independent : σ_G = 0.14742229591663988  P(G<0) = 0.0033309007877438956\ncorrelated  : σ_G = 0.10519822558706333  P(G<0) = 7.1666324683195e-5"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": "**Correlation makes this chain better**, by a factor of about 45 in failure rate. The reason\nis physical: the cavity enters with $+1$ while the boss and rib enter with $-1$, so if the\nprinter runs everything tall the errors largely cancel. RSS could not see this, having already\nassumed the dimensions were unrelated.\n\nNow the opposite case — four printed spacers in series, where every term has the same sign.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": "asB : [   +1,   -1,   -1,   -1,   -1]$\nTsB : [ 0.30, 0.20, 0.20, 0.20, 0.20]$\nγB  : 21.00 - 4*5.00$\n\ncaseB(i,j) := if i = j then 1 elseif i = 1 or j = 1 then 0 else 0.6$\n\npB_indep : Φ(-γB/sqrt(varG(asB, TsB, indep)))$\npB_corr  : Φ(-γB/sqrt(varG(asB, TsB, caseB)))$\n\nprint(\"independent : 3σ =\", float(3*sqrt(varG(asB, TsB, indep))), \" P(G<0) =\", pB_indep)$\nprint(\"correlated  : 3σ =\", float(3*sqrt(varG(asB, TsB, caseB))), \" P(G<0) =\", pB_corr)$\nprint(\"worst case bound =\", apply(\"+\", map(abs, map(\"*\", asB, TsB))))$\nprint(\"failure rate ratio =\", float(pB_corr/pB_indep))$\n",
+      "metadata": {},
+      "execution_count": 14,
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "independent : 3σ = 0.5  P(G<0) = 9.865876449133282e-10\ncorrelated  : 3σ = 0.7334848328356899  P(G<0) = 2.1562697195443015e-5\nworst case bound = 1.0999999999999999\nfailure rate ratio = 21855.83542082295"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": "**The failure rate rose by a factor of about 22,000**, and the effective assembly tolerance\nmoved from 0.50 (RSS) most of the way to 1.10 (worst case). Nothing about the parts changed —\nonly the assumption.\n\n### What the example is for\n\n1. **The method choice changes the answer by orders of magnitude** — from $7\\times10^{-5}$ to\n   3.5% across the treatments above, on identical inputs. Always report which method you used\n   and why.\n2. **Correlation can go either way and RSS cannot tell you which.** For 3D-printed assemblies,\n   where common-cause variation is the norm, this is the argument for Monte Carlo with\n   explicit correlation groups over any closed-form method.\n",
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": "## 11. Beyond 1D\n\nWhen the chain involves rotations, contact conditions, or floating fasteners, the linear\nmodel runs out. The literature offers three approaches:\n\n- **Vector loop / direct linearisation** (Chase and co-workers, Brigham Young ADCATS).\n  Kinematic loop equations with small-displacement assumptions; solved for sensitivities.\n  Well documented and implementable.\n- **Small displacement torsors (SDT)** and **T-Maps**. Represent the allowed variation of a\n  feature as a set in a six-dimensional displacement space; propagate by Minkowski sums and\n  intersections. Rigorous, mathematically heavy, and the mainstream of European academic\n  work.\n- **Monte Carlo over a parametric CAD model.** Perturb parameters, rebuild, measure. Slow\n  (seconds per sample) but conceptually trivial and exact for whatever the model captures.\n  Viable for a few thousand samples of a small FreeCAD assembly overnight.\n\nFor the assemblies in scope here, the third is almost always the right call when 1D is\ninsufficient, because you already have the parametric model.\n\nFor a survey of the underlying mathematical models, see the Springer review \"A comprehensive\nreview of tolerance analysis models\", *Int. J. Adv. Manuf. Technol.* (2018),\n[doi:10.1007/s00170-018-1920-2](https://doi.org/10.1007/s00170-018-1920-2).\n",
+      "metadata": {}
+    }
+  ]
+}
